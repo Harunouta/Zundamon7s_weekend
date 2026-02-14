@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ずんだもんの休日</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #F5FFC8; /* 背景：薄いクリーム色 */
+            --tile-base: #5D9B0E; /* ずんだ色（基準） */
+            --tile-text: #ffffff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 { margin-bottom: 10px; color: var(--tile-base); text-shadow: 1px 1px 0 #fff; }
+
+        /* ボタン */
+        button {
+            background-color: var(--tile-base);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            transition: transform 0.1s;
+            font-weight: bold;
+            box-shadow: 0 4px 0 #3e6b06;
+        }
+        button:hover { transform: translateY(-2px); }
+        button:active { transform: translateY(2px); box-shadow: 0 2px 0 #3e6b06; }
+        button:disabled { background-color: #ccc; box-shadow: none; cursor: not-allowed; transform: none; }
+        
+        button.secondary {
+            background-color: #fff;
+            color: var(--tile-base);
+            border: 2px solid var(--tile-base);
+            box-shadow: none;
+        }
+        button.secondary:hover { background-color: #f0f0f0; }
+
+        button.debug-btn {
+            background-color: #333;
+            box-shadow: 0 4px 0 #000;
+        }
+
+        /* ファイル読み込み・設定画面 */
+        #loader-screen, #setup-screen {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            margin-top: 20px;
+        }
+
+        .file-input-group { margin: 15px 0; text-align: left; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="file"] { display: block; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px; }
+
+        /* ゲーム画面 */
+        #game-screen {
+            display: none;
+            width: 100%;
+            max-width: 1200px;
+            grid-template-columns: 1fr 340px; 
+            gap: 20px;
+            align-items: start;
+        }
+
+        /* ボードエリア */
+        #board-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 20px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 15px;
+            justify-content: flex-start;
+            align-content: flex-start;
+            border: 2px solid #e0e0e0;
+        }
+
+        /* 枝豆カラーバリエーション */
+        .tile {
+            width: 65px;
+            height: 65px;
+            background-color: var(--tile-base);
+            color: var(--tile-text);
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            position: relative;
+            font-size: 0.9rem;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.15);
+            border: 2px solid rgba(255,255,255,0.8);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .tile.type-W { background-color: #8BC34A; } 
+        .tile.type-D { background-color: #33691E; color: white !important; }
+        .tile.type-C { 
+            background-color: #CDDC39; 
+            color: #333; 
+            text-shadow: none;
+        }
+
+        .tile.start { background-color: #FF9800; color: white; z-index: 2; }
+        .tile.goal { background-color: #FF5722; color: white; z-index: 2; }
+
+        /* プレイヤー駒 */
+        .player-token {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            position: absolute;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.6);
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 10;
+        }
+
+        /* サイドバー */
+        #sidebar { display: flex; flex-direction: column; gap: 15px; }
+        .panel {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-top: 4px solid var(--tile-base);
+        }
+
+        h3 { margin-top: 0; color: var(--tile-base); border-bottom: 2px solid #eee; padding-bottom: 5px; }
+
+        .player-stat {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .player-stat.active {
+            background-color: #e6ffe6;
+            border-left: 5px solid var(--tile-base);
+            font-weight: bold;
+        }
+
+        /* 日記タブ */
+        #diary-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 8px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+        }
+        .tab-btn {
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            color: #666;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            margin: 0;
+            box-shadow: none;
+        }
+        .tab-btn:hover { transform: none; background: #eee; }
+        .tab-btn.active {
+            background: var(--tile-base);
+            color: white;
+            border-color: var(--tile-base);
+            font-weight: bold;
+        }
+
+        /* 日記リスト */
+        #diary-list {
+            height: 300px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            border: 1px solid #eee;
+            padding: 5px;
+            background: #fafafa;
+        }
+        .log-entry {
+            margin-bottom: 6px;
+            padding: 6px 8px;
+            background: white;
+            border-left: 3px solid #ccc;
+            border-radius: 0 4px 4px 0;
+            cursor: default;
+        }
+        .log-entry.has-card {
+            border-left-color: #feca57;
+            background-color: #fffaf0;
+            cursor: pointer;
+        }
+        .log-entry.has-card:hover {
+            background-color: #ffeaa7;
+        }
+
+        #dice-area { text-align: center; padding: 20px; }
+        #dice-display {
+            font-size: 3rem;
+            margin: 10px 0;
+            height: 60px;
+            line-height: 60px;
+            color: #333;
+        }
+
+        /* カードポップアップ */
+        #card-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(2px);
+        }
+        .card-modal {
+            background: white;
+            padding: 25px;
+            border-radius: 20px;
+            width: 85%;
+            max-width: 400px;
+            text-align: center;
+            border: 5px solid var(--tile-base);
+            position: relative;
+            animation: popIn 0.3s ease;
+        }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+        .card-badge {
+            background: var(--tile-base);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .card-text { font-size: 1.1rem; line-height: 1.6; margin-bottom: 20px; min-height: 60px; }
+        .stat-change { 
+            display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; font-weight: bold; background: #f0f0f0; padding: 10px; border-radius: 8px;
+        }
+        .stat-change span { color: #d63031; }
+        .stat-change span.plus { color: #00b894; }
+
+        /* 結果画面 */
+        #winner-screen {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(93, 155, 14, 0.95);
+            z-index: 2000;
+            color: white;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        table { border-collapse: collapse; background: white; color: #333; margin: 20px; border-radius: 8px; overflow: hidden; width: 90%; max-width: 600px; }
+        th, td { padding: 12px 15px; text-align: center; border-bottom: 1px solid #ddd; }
+        th { background: #333; color: white; }
+        
+        /* 終了後のメニュー */
+        .end-menu { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+        
+        #show-result-btn {
+            display: none; 
+            width: 100%;
+            margin-top: 10px;
+            background-color: #333;
+        }
+
+        /* レスポンシブ */
+        @media (max-width: 800px) {
+            #game-screen { grid-template-columns: 1fr; }
+            #sidebar { order: -1; }
+            #board-container { order: 2; }
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <h1>ずんだもんの休日</h1>
+
+    <div id="loader-screen">
+        <h2>データの読み込み</h2>
+        <p>ローカルで遊ぶためにCSVファイルを選択してください。</p>
+        
+        <div class="file-input-group">
+            <label for="place-csv">1. マス目データ (place.csv)</label>
+            <input type="file" id="place-csv" accept=".csv">
+        </div>
+
+        <div class="file-input-group">
+            <label for="card-csv">2. カードデータ (card.csv)</label>
+            <input type="file" id="card-csv" accept=".csv">
+        </div>
+
+        <button id="load-btn" onclick="processFiles()" disabled>データ読み込み</button>
+    </div>
+
+    <div id="setup-screen" class="hidden">
+        <h2>ゲーム設定</h2>
+        <p>プレイ人数 (1～6人)</p>
+        <input type="number" id="player-count" min="1" max="6" value="1" style="font-size:1.5rem; width:80px; text-align:center;">
+        <br><br>
+        <button onclick="startGame()">ゲームスタートなのだ！</button>
+    </div>
+
+    <div id="game-screen">
+        
+        <div id="sidebar">
+            <div class="panel" id="dice-area">
+                <h3>ターン: <span id="current-player-name">Player 1</span></h3>
+                <div id="dice-display">🎲</div>
+                <button id="roll-btn" onclick="rollDice()">サイコロを振る</button>
+                <button id="show-result-btn" onclick="showWinnerScreen()">結果発表を見る</button>
+            </div>
+
+            <div class="panel">
+                <h3>ステータス</h3>
+                <div id="stats-list"></div>
+            </div>
+
+            <div class="panel">
+                <h3>日記（カード履歴）</h3>
+                <div id="diary-tabs"></div>
+                <div id="diary-list"></div>
+            </div>
+        </div>
+
+        <div id="board-container"></div>
+    </div>
+
+    <div id="card-overlay">
+        <div class="card-modal">
+            <div class="card-badge" id="modal-type">TYPE</div>
+            <div id="modal-text" class="card-text">テキスト</div>
+            <div class="stat-change" id="modal-stats"></div>
+            <button onclick="closeCard()">OKなのだ</button>
+        </div>
+    </div>
+
+    <div id="winner-screen">
+        <h1 style="color:white; font-size: 3rem;">ゴール！！</h1>
+        <h2 id="winner-announce"></h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>プレイヤー</th>
+                    <th>幸福度</th>
+                    <th>体調</th>
+                    <th>結果</th>
+                </tr>
+            </thead>
+            <tbody id="result-table"></tbody>
+        </table>
+        
+        <div class="end-menu">
+            <button onclick="downloadDebugLog()" class="debug-btn">デバッグログ保存 (JSON)</button>
+            <button onclick="closeWinnerScreen()" class="secondary">盤面を見る（話し合い）</button>
+            <button onclick="location.reload()" style="background:white; color:var(--tile-base);">もう一度遊ぶ</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 設定値
+        // ==========================================
+        const CONFIG = {
+            START_HAPPINESS: 7,
+            START_HEALTH: 15,
+            MAX_HAPPINESS: 10,
+            MAX_HEALTH: 15,
+            MIN_VALUE: 0
+        };
+
+        const PLAYER_COLORS = ['#ff6b6b', '#1dd1a1', '#54a0ff', '#feca57', '#5f27cd', '#c8d6e5'];
+
+        // ==========================================
+        // 状態管理
+        // ==========================================
+        const state = {
+            players: [],
+            board: [],
+            // cards: [], // 旧：全カードリスト
+            decks: {},    // 新：種類別の山札 { WAKUWAKU: [], ... }
+            logs: [],
+            debugHistory: [],
+            currentPlayerIndex: 0,
+            currentTab: -1,
+            isProcessing: false,
+            isGameEnded: false,
+            winner: null
+        };
+
+        // ==========================================
+        // デバッグログ記録関数
+        // ==========================================
+        function recordDebug(action, playerIndex, details = {}) {
+            const p = state.players[playerIndex];
+            state.debugHistory.push({
+                timestamp: new Date().toISOString(),
+                turnCount: state.debugHistory.length + 1,
+                player: p ? p.name : 'System',
+                playerIndex: playerIndex,
+                action: action,
+                ...details
+            });
+        }
+
+        // ==========================================
+        // ファイル読み込み処理
+        // ==========================================
+        const placeInput = document.getElementById('place-csv');
+        const cardInput = document.getElementById('card-csv');
+        const loadBtn = document.getElementById('load-btn');
+
+        function checkFiles() {
+            if (placeInput.files.length > 0 && cardInput.files.length > 0) {
+                loadBtn.disabled = false;
+            }
+        }
+        placeInput.addEventListener('change', checkFiles);
+        cardInput.addEventListener('change', checkFiles);
+
+        function parseFile(file) {
+            return new Promise((resolve, reject) => {
+                Papa.parse(file, {
+                    header: false,
+                    skipEmptyLines: true,
+                    complete: results => resolve(results.data),
+                    error: err => reject(err)
+                });
+            });
+        }
+
+        // 一時保存用変数
+        let tempBoardData = [];
+        let tempCardData = [];
+
+        async function processFiles() {
+            try {
+                // place.csv
+                const placeData = await parseFile(placeInput.files[0]);
+                tempBoardData = placeData.slice(1).map((row, i) => ({
+                    index: i,
+                    no: row[0],
+                    type: row[1].trim()
+                }));
+
+                // card.csv
+                const cardData = await parseFile(cardInput.files[0]);
+                tempCardData = cardData.slice(1).map(row => ({
+                    type: row[1]?.trim(),
+                    no: row[2],
+                    text: row[3],
+                    happiness: parseInt(row[4]) || 0,
+                    health: parseInt(row[5]) || 0,
+                    move: parseInt(row[6]) || 0
+                })).filter(c => c.type);
+
+                document.getElementById('loader-screen').classList.add('hidden');
+                document.getElementById('setup-screen').classList.remove('hidden');
+
+            } catch (e) {
+                alert("CSV読み込みエラー: " + e);
+            }
+        }
+
+        // ==========================================
+        // ゲーム初期化
+        // ==========================================
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function startGame() {
+            let count = parseInt(document.getElementById('player-count').value);
+            if (count < 1) count = 1; if (count > 6) count = 6;
+
+            // 1. ボード初期化
+            state.board = tempBoardData;
+
+            // 2. プレイヤー初期化
+            state.players = [];
+            state.debugHistory = [];
+            
+            for (let i = 0; i < count; i++) {
+                state.players.push({
+                    id: i,
+                    name: `Player ${i+1}`,
+                    happiness: CONFIG.START_HAPPINESS,
+                    health: CONFIG.START_HEALTH,
+                    position: 0,
+                    color: PLAYER_COLORS[i],
+                    hand: [] // 手札（引いたカード）
+                });
+            }
+
+            // 3. 山札（デッキ）の構築とシャッフル
+            state.decks = {
+                'WAKUWAKU': [],
+                'DOKIDOKI': [],
+                'CharactorCard': []
+            };
+
+            tempCardData.forEach(card => {
+                // 元データのコピーを作成して格納（参照渡し回避）
+                if (state.decks[card.type]) {
+                    state.decks[card.type].push({...card});
+                }
+            });
+
+            // シャッフル
+            for (let key in state.decks) {
+                shuffle(state.decks[key]);
+            }
+
+            // 4. UI初期化
+            const tabContainer = document.getElementById('diary-tabs');
+            tabContainer.innerHTML = `<button class="tab-btn active" onclick="switchTab(-1)">全員</button>`;
+            state.players.forEach(p => {
+                tabContainer.innerHTML += `<button class="tab-btn" onclick="switchTab(${p.id})">${p.name}</button>`;
+            });
+
+            document.getElementById('setup-screen').classList.add('hidden');
+            const gameScreen = document.getElementById('game-screen');
+            gameScreen.classList.remove('hidden');
+            gameScreen.style.display = 'grid';
+
+            renderBoard();
+            updateStatsUI();
+            addLog("ゲーム開始！山札をシャッフルしたのだ。", -1);
+            
+            // デバッグログ: デッキ初期状態
+            recordDebug("GAME_START", -1, { 
+                playerCount: count,
+                deckSizes: {
+                    W: state.decks['WAKUWAKU'].length,
+                    D: state.decks['DOKIDOKI'].length,
+                    C: state.decks['CharactorCard'].length
+                }
+            });
+
+            state.currentPlayerIndex = 0;
+            updateTurnUI();
+        }
+
+        // ==========================================
+        // ゲームロジック
+        // ==========================================
+
+        function getNextPlayerIndex() {
+            let minPos = Infinity;
+            state.players.forEach(p => {
+                if (p.position < minPos) minPos = p.position;
+            });
+
+            const candidates = state.players.filter(p => p.position === minPos);
+            if (candidates.length === 1) return candidates[0].id;
+
+            let searchIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            for (let i = 0; i < state.players.length; i++) {
+                const p = state.players[searchIndex];
+                if (p.position === minPos) return p.id;
+                searchIndex = (searchIndex + 1) % state.players.length;
+            }
+            return candidates[0].id;
+        }
+
+        function rollDice() {
+            if (state.isProcessing || state.isGameEnded) return;
+            state.isProcessing = true;
+            document.getElementById('roll-btn').disabled = true;
+
+            const diceDiv = document.getElementById('dice-display');
+            const steps = Math.floor(Math.random() * 6) + 1;
+
+            let count = 0;
+            const anim = setInterval(() => {
+                diceDiv.innerText = ['⚀','⚁','⚂','⚃','⚄','⚅'][Math.floor(Math.random()*6)];
+                count++;
+                if (count > 10) {
+                    clearInterval(anim);
+                    diceDiv.innerText = ['⚀','⚁','⚂','⚃','⚄','⚅'][steps - 1] + ` ${steps}`;
+                    
+                    const p = state.players[state.currentPlayerIndex];
+                    addLog(`${p.name} は ${steps} を出した`, p.id);
+                    recordDebug("DICE_ROLL", p.id, { diceValue: steps });
+
+                    setTimeout(() => movePlayer(state.currentPlayerIndex, steps, 'dice'), 500);
+                }
+            }, 60);
+        }
+
+        function movePlayer(pIndex, steps, source = 'dice') {
+            const player = state.players[pIndex];
+            const oldPos = player.position;
+            const maxPos = state.board.length - 1;
+            let newPos = player.position + steps;
+
+            if (newPos >= maxPos) newPos = maxPos;
+            if (newPos < 0) newPos = 0;
+
+            player.position = newPos;
+            
+            recordDebug("MOVE_PLAYER", pIndex, { 
+                from: oldPos, 
+                to: newPos, 
+                steps: steps, 
+                source: source 
+            });
+
+            renderBoard();
+
+            if (newPos === maxPos) {
+                addLog(`${player.name} がゴール！`, player.id);
+                setTimeout(() => finishGame(player), 500);
+            } else {
+                setTimeout(() => checkTile(player, source), 600);
+            }
+        }
+
+        function checkTile(player, source) {
+            const tile = state.board[player.position];
+            const type = tile.type;
+
+            if (source === 'card' && type !== 'C') {
+                addLog(`${player.name} は ${type}マスに止まってターン終了`, player.id);
+                recordDebug("TURN_END_BY_RULE", player.id, { tileType: type });
+                endTurn();
+                return;
+            }
+
+            if (type === 'W') drawCard('WAKUWAKU', player);
+            else if (type === 'D') drawCard('DOKIDOKI', player);
+            else if (type === 'C') drawCard('CharactorCard', player);
+            else endTurn();
+        }
+
+        function drawCard(type, player) {
+            // デッキから取得 (Pop)
+            const deck = state.decks[type];
+            
+            if (!deck || deck.length === 0) {
+                addLog(`もう ${type} のカードがないのだ！`, player.id);
+                recordDebug("DECK_EMPTY", player.id, { deckType: type });
+                endTurn();
+                return;
+            }
+            
+            // カードを1枚引く
+            const card = deck.pop();
+            
+            // 手札に追加
+            player.hand.push(card);
+
+            recordDebug("DRAW_CARD", player.id, { 
+                cardNo: card.no, 
+                cardType: card.type,
+                remainingDeck: deck.length
+            });
+
+            // ステータス反映
+            player.happiness += card.happiness;
+            player.health += card.health;
+            
+            if (player.happiness > CONFIG.MAX_HAPPINESS) player.happiness = CONFIG.MAX_HAPPINESS;
+            if (player.happiness < CONFIG.MIN_VALUE) player.happiness = CONFIG.MIN_VALUE;
+            
+            if (player.health > CONFIG.MAX_HEALTH) player.health = CONFIG.MAX_HEALTH;
+            if (player.health < CONFIG.MIN_VALUE) player.health = CONFIG.MIN_VALUE;
+
+            updateStatsUI();
+            addLog(`カード獲得: ${card.text}`, player.id, card);
+
+            showModal(card, () => {
+                if (card.move !== 0) {
+                    addLog(`効果で ${card.move} マス移動`, player.id);
+                    movePlayer(state.currentPlayerIndex, card.move, 'card');
+                } else {
+                    endTurn();
+                }
+            });
+        }
+
+        function endTurn() {
+            if (state.isGameEnded) return;
+            state.isProcessing = false;
+            state.currentPlayerIndex = getNextPlayerIndex();
+            updateTurnUI();
+            document.getElementById('roll-btn').disabled = false;
+        }
+
+        function finishGame(winner) {
+            state.winner = winner;
+            state.isGameEnded = true;
+            
+            recordDebug("GAME_END", winner.id, { winnerName: winner.name });
+
+            const diceBtn = document.getElementById('roll-btn');
+            diceBtn.innerText = "ゲーム終了";
+            diceBtn.disabled = true;
+            document.getElementById('show-result-btn').style.display = 'block';
+
+            showWinnerScreen();
+        }
+
+        // ==========================================
+        // UI 更新・描画
+        // ==========================================
+
+        function renderBoard() {
+            const container = document.getElementById('board-container');
+            container.innerHTML = '';
+
+            state.board.forEach((tile, idx) => {
+                const el = document.createElement('div');
+                el.className = 'tile';
+                if (tile.type === 'スタート') el.classList.add('start');
+                else if (tile.type === 'ゴール') el.classList.add('goal');
+                else if (tile.type === 'W') el.classList.add('type-W');
+                else if (tile.type === 'D') el.classList.add('type-D');
+                else if (tile.type === 'C') el.classList.add('type-C');
+                
+                el.innerText = tile.no; 
+
+                state.players.forEach(p => {
+                    if (p.position === idx) {
+                        const token = document.createElement('div');
+                        token.className = 'player-token';
+                        token.style.backgroundColor = p.color;
+                        const offset = p.id * 4;
+                        token.style.top = `${5 + offset}px`;
+                        token.style.left = `${5 + offset}px`;
+                        el.appendChild(token);
+                    }
+                });
+                container.appendChild(el);
+            });
+        }
+
+        function updateStatsUI() {
+            const list = document.getElementById('stats-list');
+            list.innerHTML = state.players.map(p => `
+                <div class="player-stat ${p.id === state.currentPlayerIndex ? 'active' : ''}">
+                    <span style="color:${p.color}">●</span> ${p.name} 
+                    <div style="font-size:0.85rem; padding-left:15px;">
+                        幸福: <b>${p.happiness}</b> / 体調: <b>${p.health}</b>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateTurnUI() {
+            if (state.isGameEnded) {
+                document.getElementById('current-player-name').innerText = "終了";
+                return;
+            }
+            const p = state.players[state.currentPlayerIndex];
+            const nameEl = document.getElementById('current-player-name');
+            nameEl.innerText = p.name;
+            nameEl.style.color = p.color;
+        }
+
+        // ==========================================
+        // 日記（ログ） & タブ管理
+        // ==========================================
+        function addLog(text, playerIndex, cardData = null) {
+            state.logs.push({ text, playerIndex, cardData, timestamp: Date.now() });
+            renderDiary();
+        }
+
+        function switchTab(playerIndex) {
+            state.currentTab = playerIndex;
+            const tabs = document.querySelectorAll('.tab-btn');
+            tabs.forEach((btn, idx) => {
+                if (playerIndex === -1 && idx === 0) btn.classList.add('active');
+                else if (idx === playerIndex + 1) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+            renderDiary();
+        }
+
+        function renderDiary() {
+            const container = document.getElementById('diary-list');
+            container.innerHTML = '';
+            
+            const filteredLogs = state.logs.filter(l => {
+                if (state.currentTab === -1) return true;
+                return l.playerIndex === state.currentTab || l.playerIndex === -1;
+            });
+
+            [...filteredLogs].reverse().forEach(log => {
+                const el = document.createElement('div');
+                el.className = 'log-entry';
+                if (log.cardData) {
+                    el.classList.add('has-card');
+                    el.onclick = () => showModal(log.cardData, null); 
+                    el.title = "クリックでカード詳細を確認";
+                }
+
+                let prefix = '';
+                if (log.playerIndex >= 0) {
+                    const p = state.players[log.playerIndex];
+                    prefix = `<span style="color:${p.color}; margin-right:5px;">●</span>`;
+                }
+
+                el.innerHTML = `${prefix}${log.text}`;
+                container.appendChild(el);
+            });
+        }
+
+        // ==========================================
+        // モーダル & JSON出力
+        // ==========================================
+        let modalCallback = null;
+        function showModal(card, callback) {
+            modalCallback = callback;
+            const badge = document.getElementById('modal-type');
+            badge.innerText = card.type;
+            
+            badge.className = 'card-badge'; 
+            if(card.type === 'WAKUWAKU') {
+                badge.style.backgroundColor = '#8BC34A'; badge.style.color = 'white';
+            } else if(card.type === 'DOKIDOKI') {
+                badge.style.backgroundColor = '#33691E'; badge.style.color = 'white';
+            } else if(card.type === 'CharactorCard') { 
+                badge.style.backgroundColor = '#CDDC39'; badge.style.color = '#333'; 
+            } else {
+                badge.style.backgroundColor = '#5D9B0E'; badge.style.color = 'white';
+            }
+
+            document.getElementById('modal-text').innerText = card.text;
+            
+            let statsHtml = '';
+            if (card.happiness !== 0) {
+                const cls = card.happiness > 0 ? 'plus' : '';
+                const sign = card.happiness > 0 ? '+' : '';
+                statsHtml += `<span class="${cls}">幸福 ${sign}${card.happiness}</span>`;
+            }
+            if (card.health !== 0) {
+                const cls = card.health > 0 ? 'plus' : '';
+                const sign = card.health > 0 ? '+' : '';
+                statsHtml += `<span class="${cls}">体調 ${sign}${card.health}</span>`;
+            }
+            if (card.move !== 0) statsHtml += `<span style="color:#333;">移動 ${card.move}</span>`;
+            if (statsHtml === '') statsHtml = '<span>変化なし</span>';
+            
+            document.getElementById('modal-stats').innerHTML = statsHtml;
+            document.getElementById('card-overlay').style.display = 'flex';
+        }
+
+        function closeCard() {
+            document.getElementById('card-overlay').style.display = 'none';
+            if (modalCallback) {
+                modalCallback();
+                modalCallback = null;
+            }
+        }
+
+        function showWinnerScreen() {
+            const screen = document.getElementById('winner-screen');
+            document.getElementById('winner-announce').innerText = `${state.winner.name} の勝ち！`;
+            
+            const tbody = document.getElementById('result-table');
+            let html = '';
+            state.players.forEach(p => {
+                const isWinner = (p.id === state.winner.id);
+                html += `
+                    <tr style="${isWinner ? 'background:#e6ffe6; font-weight:bold;' : ''}">
+                        <td>${p.name}</td>
+                        <td>${p.happiness}</td>
+                        <td>${p.health}</td>
+                        <td>${isWinner ? '1位' : '-'}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+            screen.style.display = 'flex';
+        }
+
+        function closeWinnerScreen() {
+            document.getElementById('winner-screen').style.display = 'none';
+        }
+
+        function downloadDebugLog() {
+            const debugData = {
+                gameInfo: {
+                    date: new Date().toLocaleString(),
+                    winner: state.winner ? state.winner.name : 'Unknown'
+                },
+                // プレイヤーごとの手札（獲得カード）も出力
+                finalStats: state.players.map(p => ({
+                    name: p.name,
+                    happiness: p.happiness,
+                    health: p.health,
+                    position: p.position,
+                    hand: p.hand.map(c => ({ no: c.no, type: c.type, text: c.text }))
+                })),
+                history: state.debugHistory
+            };
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(debugData, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "zundamon_debug_log.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+    </script>
+</body>
+</html>
