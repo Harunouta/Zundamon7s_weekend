@@ -242,8 +242,8 @@
         const defaultLoadStatus = document.getElementById('default-load-status');
 
         const DEFAULT_DATA_PATHS = {
-            placeCsv: 'https://github.com/Harunouta/Zundamon7s_weekend/blob/main/place-vol2.csv',
-            cardCsv: 'https://github.com/Harunouta/Zundamon7s_weekend/blob/main/card-ver2.csv'
+            placeCsv: 'https://github.com/Harunouta/Zundamon7s_weekend/place-vol2.csv',
+            cardCsv: 'https://github.com/Harunouta/Zundamon7s_weekend/card-ver2.csv'
         };
 
         const ASSET_PATHS = {
