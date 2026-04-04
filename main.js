@@ -10,7 +10,7 @@
         };
 
         const PLAYER_COLORS = ['#ff6b6b', '#1dd1a1', '#54a0ff', '#feca57', '#5f27cd', '#c8d6e5'];
-        const boardBackgroundSrc = './assets/logo/background.PNG';
+        const boardBackgroundSrc = './logo/background.PNG';
         const boardImageIntrinsicWidthPx = 667;
         const boardImageIntrinsicHeightPx = 357;
         /** 当たり判定・盤面の論理サイズ（背景_当たり判定.PNG / background.PNG と一致） */
@@ -247,12 +247,12 @@
         };
 
         const ASSET_PATHS = {
-            logo: 'assets/logo/logo.PNG',
-            cardFrontDir: 'assets/card/front/',
+            logo: 'logo/logo.PNG',
+            cardFrontDir: 'card/front/',
             cardBack: {
-                WAKUWAKU: 'assets/card/back/Wback.PNG',
-                DOKIDOKI: 'assets/card/back/Dback.PNG',
-                CharactorCard: 'assets/card/back/Cback.PNG'
+                WAKUWAKU: 'card/back/Wback.PNG',
+                DOKIDOKI: 'card/back/Dback.PNG',
+                CharactorCard: 'card/back/Cback.PNG'
             }
         };
 
@@ -284,7 +284,7 @@
         const BGM_VOLUME_STORAGE_KEY = 'zundamonBgmVolumePercent';
         const VOLUME_SLIDER_MAX = 100;
         const DEFAULT_VOLUME_PERCENT = 100;
-        const SE_AUDIO_DIRECTORY = 'assets/audio/';
+        const SE_AUDIO_DIRECTORY = 'audio/';
         const BGM_THEME_PATH = `${SE_AUDIO_DIRECTORY}theme-inst.mp3`;
         const SE_FILE_PREFIX = 'SE_';
         const SE_FILE_EXTENSION = '.wav';
@@ -490,7 +490,7 @@
 
         /**
          * 効果音を鳴らす（SE がオフのときは何もしない）。
-         * @param {string} stem `dice` または `SE_dice` → assets/audio/SE_dice.wav
+         * @param {string} stem `dice` または `SE_dice` → audio/SE_dice.wav
          * @param {{ bypassMute?: boolean }} [options] bypassMute なら SE オフ中でも再生（音量プレビュー用）
          */
         function playSe(stem, options = {}) {
@@ -513,7 +513,7 @@
         }
 
         /**
-         * カードNoに対応するセリフ音声（assets/audio/{No}.wav）。
+         * カードNoに対応するセリフ音声（audio/{No}.wav）。
          * @param {{ no?: string }} card
          * @param {{ bypassMute?: boolean }} [options] 音量スライダー試聴時は bypassMute: true
          */
@@ -937,12 +937,12 @@
         }
 
         const PLAYER_ICON_PATHS = [
-            'assets/player_icon/player1.PNG',
-            'assets/player_icon/player2.PNG',
-            'assets/player_icon/player3.PNG',
-            'assets/player_icon/player4.PNG',
-            'assets/player_icon/player5.PNG',
-            'assets/player_icon/player6.PNG'
+            'player_icon/player1.PNG',
+            'player_icon/player2.PNG',
+            'player_icon/player3.PNG',
+            'player_icon/player4.PNG',
+            'player_icon/player5.PNG',
+            'player_icon/player6.PNG'
         ];
 
         function playSeForPlayerIconPath(iconPath) {
