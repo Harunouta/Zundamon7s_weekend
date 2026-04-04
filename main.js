@@ -10,7 +10,7 @@
         };
 
         const PLAYER_COLORS = ['#ff6b6b', '#1dd1a1', '#54a0ff', '#feca57', '#5f27cd', '#c8d6e5'];
-        const boardBackgroundSrc = './logo/background.PNG';
+        const boardBackgroundSrc = 'logo/background.PNG';
         const boardImageIntrinsicWidthPx = 667;
         const boardImageIntrinsicHeightPx = 357;
         /** 当たり判定・盤面の論理サイズ（背景_当たり判定.PNG / background.PNG と一致） */
@@ -242,8 +242,8 @@
         const defaultLoadStatus = document.getElementById('default-load-status');
 
         const DEFAULT_DATA_PATHS = {
-            placeCsv: 'Zundamon7s_weekend/place-vol2.csv',
-            cardCsv: 'Zundamon7s_weekend/card-ver2.csv'
+            placeCsv: 'place-vol2.csv',
+            cardCsv: 'card-ver2.csv'
         };
 
         const ASSET_PATHS = {
@@ -1360,6 +1360,7 @@
         const CARD_READ_ALOUD_SCRIPT_HINT_NEED_CSV =
             'CSVを読み込むと、ここにカードのセリフが表示されます。';
         const CARD_READ_ALOUD_SCRIPT_MISSING_IN_CSV = '（CSVに該当するカードがありません）';
+
         function getDeckTypeForCardReadAloudPrefix(prefix) {
             return CARD_READ_ALOUD_PREFIX_TO_TYPE[prefix] || 'WAKUWAKU';
         }
@@ -1421,7 +1422,7 @@
                 if (fallbackBack) img.src = fallbackBack;
             };
             img.src = frontPath;
-                            refreshCardReadAloudScriptDisplay();
+            refreshCardReadAloudScriptDisplay();
         }
 
         function refreshCardReadAloudScriptDisplay() {
