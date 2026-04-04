@@ -248,7 +248,7 @@
     <div id="card-read-aloud-overlay" onclick="closeCardReadAloudOverlay()">
         <div id="card-read-aloud-modal" onclick="event.stopPropagation()">
             <h2>カード読み上げ</h2>
-            <p class="card-read-aloud-hint">添え字と数字を選び、右のカード画像を押すとそのカードのセリフ音声が流れます。</p>
+            <p class="card-read-aloud-hint">添え字と数字を選ぶと横にセリフが表示されます。カード画像を押すとそのカードの音声が流れます。</p>
             <div class="card-read-aloud-body">
                 <div class="card-read-aloud-controls">
                     <div class="card-read-aloud-field">
@@ -260,9 +260,12 @@
                         <select id="card-read-aloud-number" aria-label="カードの番号"></select>
                     </div>
                 </div>
-                <button type="button" class="card-read-aloud-preview" id="card-read-aloud-preview" aria-label="カード画像を押して音声を再生">
-                    <img id="card-read-aloud-preview-img" alt="選択中のカード">
-                </button>
+                <div class="card-read-aloud-preview-wrap">
+                    <button type="button" class="card-read-aloud-preview" id="card-read-aloud-preview" aria-label="カード画像を押して音声を再生">
+                        <img id="card-read-aloud-preview-img" alt="選択中のカード">
+                    </button>
+                    <p class="card-read-aloud-script" id="card-read-aloud-script" aria-live="polite"></p>
+                </div>
             </div>
             <div class="row">
                 <button type="button" onclick="closeCardReadAloudOverlay()">閉じる</button>
