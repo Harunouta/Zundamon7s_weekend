@@ -1357,7 +1357,9 @@
         }
 
         let cardReadAloudUiInitialized = false;
-
+        const CARD_READ_ALOUD_SCRIPT_HINT_NEED_CSV =
+            'CSVを読み込むと、ここにカードのセリフが表示されます。';
+        const CARD_READ_ALOUD_SCRIPT_MISSING_IN_CSV = '（CSVに該当するカードがありません）';
         function getDeckTypeForCardReadAloudPrefix(prefix) {
             return CARD_READ_ALOUD_PREFIX_TO_TYPE[prefix] || 'WAKUWAKU';
         }
@@ -1403,9 +1405,15 @@
         function refreshCardReadAloudPreview() {
             const img = document.getElementById('card-read-aloud-preview-img');
             const prefixEl = document.getElementById('card-read-aloud-prefix');
-            if (!img || !prefixEl) return;
+            if (!img || !prefixEl) {
+                refreshCardReadAloudScriptDisplay();
+                return;
+            }
             const no = getCardReadAloudSelectedNo();
-            if (!no) return;
+            if (!no) {
+                refreshCardReadAloudScriptDisplay();
+                return;
+            }
             const deckType = getDeckTypeForCardReadAloudPrefix(prefixEl.value);
             const frontPath = getCardFrontPath({ no });
             const fallbackBack = ASSET_PATHS.cardBack[deckType] || '';
@@ -1413,6 +1421,27 @@
                 if (fallbackBack) img.src = fallbackBack;
             };
             img.src = frontPath;
+                            refreshCardReadAloudScriptDisplay();
+        }
+
+        function refreshCardReadAloudScriptDisplay() {
+            const scriptEl = document.getElementById('card-read-aloud-script');
+            if (!scriptEl) return;
+            const no = getCardReadAloudSelectedNo();
+            if (!no) {
+                scriptEl.textContent = '';
+                return;
+            }
+            if (!tempCardData.length) {
+                scriptEl.textContent = CARD_READ_ALOUD_SCRIPT_HINT_NEED_CSV;
+                return;
+            }
+            const card = tempCardData.find((c) => String(c.no).trim() === no);
+            if (!card) {
+                scriptEl.textContent = CARD_READ_ALOUD_SCRIPT_MISSING_IN_CSV;
+                return;
+            }
+            scriptEl.textContent = card.text != null ? String(card.text) : '';
         }
 
         function openCardReadAloudOverlay() {
