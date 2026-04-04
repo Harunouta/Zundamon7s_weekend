@@ -302,7 +302,7 @@
             box-sizing: border-box;
         }
         #card-read-aloud-modal {
-            width: min(640px, 100%);
+            width: min(720px, 100%);
             max-height: min(92vh, 900px);
             overflow: auto;
             background: #fff;
@@ -349,6 +349,34 @@
             padding: 8px 10px;
             border-radius: 8px;
             border: 1px solid rgba(0, 0, 0, 0.15);
+        }
+        .card-read-aloud-preview-wrap {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 16px 20px;
+            flex: 1 1 260px;
+            min-width: 0;
+        }
+        .card-read-aloud-script {
+            flex: 1 1 200px;
+            min-width: min(100%, 200px);
+            margin: 0;
+            padding: 12px 14px;
+            font-size: 0.95rem;
+            line-height: 1.55;
+            color: #222;
+            background: rgba(0, 0, 0, 0.04);
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: min(320px, 50vh);
+            overflow-y: auto;
+        }
+        .card-read-aloud-script:empty {
+            display: none;
         }
         .card-read-aloud-preview {
             border: none;
