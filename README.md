@@ -12,7 +12,7 @@
 
 ## 今後の展望（予定）
 作者が今後作業する内容として、現在以下の展開を考えています。
-* CCFOLIA（ココフォリア）で遊べるようにする
+* CCFOLIA（ココフォリア）で遊べるようにした！！[CCFOLIA（ココフォリア）ルームデータ公開先](https://ccfolia.com/room-packages/OdxF6v5ih)
 * 紙で印刷して遊べるようにする
 * VR上で遊べるようにする
 
@@ -31,6 +31,6 @@ This game and the contents of this repository may be used for both commercial an
 
 ## Future Plans
 The creator is currently considering the following future developments:
-* Making it playable on CCFOLIA
+*Play on CCFOLIA[CCFOLIA（ココフォリア）ルームデータ公開先](https://ccfolia.com/room-packages/OdxF6v5ih)
 * Making a printable physical version
 * Making it playable in VR
