@@ -1301,26 +1301,22 @@
             return window.innerHeight > window.innerWidth;
         }
 
-        const UI_LAYOUT_NARROW_BREAKPOINT_PX = 900;
-        const UI_LAYOUT_PREFER_PC_STORAGE_KEY = 'zundamonPreferPcLayoutOnNarrow';
-        const uiLayoutNarrowMql = window.matchMedia(
-            `(max-width: ${UI_LAYOUT_NARROW_BREAKPOINT_PX}px)`
-        );
+        const UI_LAYOUT_PREFER_PC_STORAGE_KEY = 'zundamonUiLayoutPc';
+        const UI_LAYOUT_PREFER_PC_LEGACY_STORAGE_KEY = 'zundamonPreferPcLayoutOnNarrow';
 
-        function isNarrowViewportForUiLayout() {
-            return uiLayoutNarrowMql.matches;
-        }
-
-        function readPreferPcLayoutOnNarrow() {
+        function readPreferPcLayout() {
             try {
                 const raw = localStorage.getItem(UI_LAYOUT_PREFER_PC_STORAGE_KEY);
-                return raw === '1' || raw === 'true';
+                if (raw === '1' || raw === 'true') return true;
+                if (raw === '0' || raw === 'false') return false;
+                const legacy = localStorage.getItem(UI_LAYOUT_PREFER_PC_LEGACY_STORAGE_KEY);
+                return legacy === '1' || legacy === 'true';
             } catch {
                 return false;
             }
         }
 
-        function persistPreferPcLayoutOnNarrow(preferPc) {
+        function persistPreferPcLayout(preferPc) {
             try {
                 localStorage.setItem(UI_LAYOUT_PREFER_PC_STORAGE_KEY, preferPc ? '1' : '0');
             } catch {
@@ -1329,14 +1325,12 @@
         }
 
         /**
-         * 狭い画面：トグルでスマホ向け（縦積み）／PC版（左右＋横スクロール）。
-         * 広い画面：常に従来の左右分割（設定は狭い画面にのみ効く）。
+         * 画面幅に依存せず、トグルのみでスマホ向け（縦積み）／PC版（左右＋必要時横スクロール）。
          */
         function syncUiLayoutBodyClasses() {
-            const preferPc = readPreferPcLayoutOnNarrow();
-            const narrow = isNarrowViewportForUiLayout();
-            document.body.classList.toggle('ui-prefer-pc-layout', narrow && preferPc);
-            document.body.classList.toggle('mobile-stack-layout', narrow && !preferPc);
+            const preferPc = readPreferPcLayout();
+            document.body.classList.toggle('ui-prefer-pc-layout', preferPc);
+            document.body.classList.toggle('mobile-stack-layout', !preferPc);
             updateUiLayoutToggleButton();
             updateRotateHintOverlay();
             if (state.players && state.players.length > 0) {
@@ -1347,7 +1341,7 @@
         function updateUiLayoutToggleButton() {
             const btn = document.getElementById('ui-layout-toggle-btn');
             if (!btn) return;
-            const preferPc = readPreferPcLayoutOnNarrow();
+            const preferPc = readPreferPcLayout();
             if (preferPc) {
                 btn.textContent = 'PC版';
                 btn.setAttribute('aria-pressed', 'true');
@@ -1360,7 +1354,7 @@
         }
 
         function toggleUiLayoutPreference() {
-            persistPreferPcLayoutOnNarrow(!readPreferPcLayoutOnNarrow());
+            persistPreferPcLayout(!readPreferPcLayout());
             syncUiLayoutBodyClasses();
         }
 
@@ -1370,15 +1364,6 @@
         }
 
         function bindUiLayoutMediaListeners() {
-            const addMqlListener = (mql) => {
-                if (!mql) return;
-                if (typeof mql.addEventListener === 'function') {
-                    mql.addEventListener('change', syncUiLayoutBodyClasses);
-                } else if (typeof mql.addListener === 'function') {
-                    mql.addListener(syncUiLayoutBodyClasses);
-                }
-            };
-            addMqlListener(uiLayoutNarrowMql);
             window.addEventListener('resize', syncUiLayoutBodyClasses);
             window.addEventListener('orientationchange', () => {
                 window.setTimeout(syncUiLayoutBodyClasses, 150);
