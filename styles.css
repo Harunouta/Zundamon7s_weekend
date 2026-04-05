@@ -32,19 +32,65 @@
             overflow-x: hidden;
         }
 
+        /* 狭い画面・ゲーム中：固定の音声バー下にタイトル・作者表記が被らないよう確保 */
+        @media (max-width: 900px) {
+            body.in-game {
+                padding-left: max(8px, env(safe-area-inset-left, 0px));
+                padding-right: max(8px, env(safe-area-inset-right, 0px));
+                /* 左上音声2段＋右上作者表記の下からヒーローが始まるよう余白 */
+                padding-top: calc(env(safe-area-inset-top, 0px) + 108px);
+            }
+            body.in-game .hero-pre-game {
+                flex-direction: column;
+                flex-wrap: nowrap;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 8px;
+                width: 100%;
+                max-width: 100%;
+            }
+            body.in-game .hero-pre-game > div:first-of-type {
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            body.in-game .hero-pre-game img[alt="ずんだもんの休日"] {
+                height: 44px !important;
+                max-width: min(260px, 88vw);
+                width: auto !important;
+                margin-left: auto;
+                margin-right: auto;
+                object-fit: contain;
+            }
+            body.in-game #top-actions {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            body.in-game #author-badge {
+                top: calc(env(safe-area-inset-top, 0px) + 8px);
+                right: max(8px, env(safe-area-inset-right, 0px));
+                left: auto;
+                max-width: min(168px, 42vw);
+                font-size: 8px;
+                line-height: 1.25;
+                padding: 4px 8px;
+                text-align: right;
+            }
+        }
+
         /* ボタン押下時の translateY で周囲が微妙に動いて見えるのを抑える */
         body.in-game button:active {
             transform: none;
         }
 
-        /* ゲーム中もタイトル（ロゴ）と「遊び方」を表示（1行に詰めたヘッダー） */
+        /* ゲーム中もタイトル（ロゴ）と「遊び方」を表示 */
         body.in-game .hero-pre-game {
             display: flex;
-            flex-direction: row;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: center;
-            gap: 10px 16px;
             margin-bottom: 8px;
             flex-shrink: 0;
             width: 100%;
@@ -53,32 +99,36 @@
         body.in-game .hero-pre-game > div:first-of-type {
             margin-bottom: 0 !important;
         }
-        body.in-game .hero-pre-game img[alt="ずんだもんの休日"] {
-            height: 52px !important;
-            width: auto !important;
-        }
-        body.in-game #build-badge {
-            margin: 0 !important;
-            flex: 0 1 auto;
-            text-align: center;
-        }
         body.in-game #top-actions {
             margin-bottom: 0;
             flex: 0 0 auto;
         }
 
-        body.in-game #author-badge {
-            font-size: 10px;
-            padding: 4px 8px;
-            top: 6px;
-            right: 8px;
+        @media (min-width: 901px) {
+            body.in-game .hero-pre-game {
+                flex-direction: row;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: center;
+                gap: 10px 16px;
+            }
+            body.in-game .hero-pre-game img[alt="ずんだもんの休日"] {
+                height: 52px !important;
+                width: auto !important;
+            }
+            body.in-game #author-badge {
+                font-size: 10px;
+                padding: 4px 8px;
+                top: calc(env(safe-area-inset-top, 0px) + 6px);
+                right: max(8px, env(safe-area-inset-right, 0px));
+            }
         }
 
-        /* 左上：1行目 SE+BGM（横並び）、2行目セリフ */
+        /* 左上：1行目 SE+BGM（横並び）、2行目セリフ＋レイアウト切替（横並び） */
         #audio-controls-bar {
             position: fixed;
-            top: 10px;
-            left: 12px;
+            top: calc(env(safe-area-inset-top, 0px) + 10px);
+            left: max(12px, env(safe-area-inset-left, 0px));
             z-index: 2500;
             display: flex;
             flex-direction: column;
@@ -86,10 +136,11 @@
             align-items: flex-start;
         }
         body.in-game #audio-controls-bar {
-            top: 6px;
-            left: 8px;
+            top: calc(env(safe-area-inset-top, 0px) + 6px);
+            left: max(8px, env(safe-area-inset-left, 0px));
         }
-        #audio-controls-row {
+        #audio-controls-row,
+        #audio-controls-voice-row {
             display: flex;
             flex-direction: row;
             flex-wrap: wrap;
@@ -98,7 +149,8 @@
         }
         #se-toggle-btn,
         #bgm-toggle-btn,
-        #voice-toggle-btn {
+        #voice-toggle-btn,
+        #ui-layout-toggle-btn {
             font-size: 12px;
             font-weight: 700;
             color: rgba(0, 0, 0, 0.78);
@@ -110,6 +162,10 @@
             cursor: pointer;
             backdrop-filter: blur(4px);
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+        }
+        #ui-layout-toggle-btn {
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         #se-toggle-btn.se-off,
         #bgm-toggle-btn.se-off,
@@ -465,6 +521,14 @@
             display: grid;
             grid-template-columns: repeat(6, 1fr);
             gap: 8px;
+        }
+        @media (max-width: 520px) {
+            .icon-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .icon-row {
+                grid-template-columns: 64px 1fr;
+            }
         }
         .icon-option {
             width: 100%;
@@ -1066,6 +1130,74 @@
 
         #sidebar #dice-area .dice-action-slot button {
             margin: 0;
+        }
+
+        /* 狭い画面でPC版：横スクロールで左右分割を維持 */
+        @media (max-width: 900px) {
+            body.in-game.ui-prefer-pc-layout {
+                overflow-x: auto;
+            }
+            body.in-game.ui-prefer-pc-layout #game-screen {
+                min-width: 720px;
+                width: max(100%, 720px);
+            }
+        }
+
+        /* スマホ向け：盤を上・操作を下に縦積み */
+        body.in-game.mobile-stack-layout #game-screen {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: auto;
+            align-items: stretch;
+        }
+        body.in-game.mobile-stack-layout #board-panel {
+            order: -1;
+            flex: 0 0 auto;
+            min-height: 0;
+            overflow: visible;
+        }
+        body.in-game.mobile-stack-layout #sidebar {
+            flex: 0 1 auto;
+            height: auto;
+            max-height: none;
+            overflow-y: visible;
+            overflow-x: hidden;
+        }
+        body.in-game.mobile-stack-layout #board-container {
+            max-height: min(50svh, 380px);
+        }
+        body.in-game.mobile-stack-layout {
+            --board-diary-list-max-height: min(240px, 36vh);
+        }
+        body.in-game.mobile-stack-layout #sidebar .panel {
+            padding: 10px 12px;
+        }
+        body.in-game.mobile-stack-layout #sidebar button {
+            min-height: 44px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+        body.in-game.mobile-stack-layout #deck-area {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px 10px;
+        }
+        body.in-game.mobile-stack-layout #deck-area .deck-stack:nth-child(3) {
+            grid-column: auto;
+            justify-content: center;
+        }
+        body.in-game.mobile-stack-layout .tab-btn {
+            min-height: 36px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+        }
+        body.in-game.mobile-stack-layout .dice-row {
+            flex-wrap: wrap;
+        }
+        body.in-game.mobile-stack-layout #dice-display {
+            font-size: 2rem;
+            height: 44px;
+            line-height: 44px;
         }
 
         .hidden { display: none !important; }
