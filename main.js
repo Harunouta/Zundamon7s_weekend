@@ -1157,10 +1157,10 @@
             initSeToggle();
             initVoiceToggle();
             initBgmToggle();
-            const buildBadge = document.getElementById('build-badge');
-            if (buildBadge) buildBadge.innerText = `build: ${new Date().toISOString()}`;
             bindRotateHintListeners();
-            updateRotateHintOverlay();
+            syncUiLayoutBodyClasses();
+            bindUiLayoutMediaListeners();
+            bindUiLayoutToggle();
             const playerCountInput = document.getElementById('player-count');
             if (playerCountInput) {
                 renderIconPicker(parseInt(playerCountInput.value) || 1);
@@ -1301,21 +1301,109 @@
             return window.innerHeight > window.innerWidth;
         }
 
+        const UI_LAYOUT_NARROW_BREAKPOINT_PX = 900;
+        const UI_LAYOUT_PREFER_PC_STORAGE_KEY = 'zundamonPreferPcLayoutOnNarrow';
+        const uiLayoutNarrowMql = window.matchMedia(
+            `(max-width: ${UI_LAYOUT_NARROW_BREAKPOINT_PX}px)`
+        );
+
+        function isNarrowViewportForUiLayout() {
+            return uiLayoutNarrowMql.matches;
+        }
+
+        function readPreferPcLayoutOnNarrow() {
+            try {
+                const raw = localStorage.getItem(UI_LAYOUT_PREFER_PC_STORAGE_KEY);
+                return raw === '1' || raw === 'true';
+            } catch {
+                return false;
+            }
+        }
+
+        function persistPreferPcLayoutOnNarrow(preferPc) {
+            try {
+                localStorage.setItem(UI_LAYOUT_PREFER_PC_STORAGE_KEY, preferPc ? '1' : '0');
+            } catch {
+                /* ignore */
+            }
+        }
+
+        /**
+         * 狭い画面：トグルでスマホ向け（縦積み）／PC版（左右＋横スクロール）。
+         * 広い画面：常に従来の左右分割（設定は狭い画面にのみ効く）。
+         */
+        function syncUiLayoutBodyClasses() {
+            const preferPc = readPreferPcLayoutOnNarrow();
+            const narrow = isNarrowViewportForUiLayout();
+            document.body.classList.toggle('ui-prefer-pc-layout', narrow && preferPc);
+            document.body.classList.toggle('mobile-stack-layout', narrow && !preferPc);
+            updateUiLayoutToggleButton();
+            updateRotateHintOverlay();
+            if (state.players && state.players.length > 0) {
+                scheduleRenderBoardForResize();
+            }
+        }
+
+        function updateUiLayoutToggleButton() {
+            const btn = document.getElementById('ui-layout-toggle-btn');
+            if (!btn) return;
+            const preferPc = readPreferPcLayoutOnNarrow();
+            if (preferPc) {
+                btn.textContent = 'PC版';
+                btn.setAttribute('aria-pressed', 'true');
+                btn.title = 'タップでスマホ版（縦積み）に切り替え';
+            } else {
+                btn.textContent = 'スマホ版';
+                btn.setAttribute('aria-pressed', 'false');
+                btn.title = 'タップでPC版（横並び・横スクロール）に切り替え';
+            }
+        }
+
+        function toggleUiLayoutPreference() {
+            persistPreferPcLayoutOnNarrow(!readPreferPcLayoutOnNarrow());
+            syncUiLayoutBodyClasses();
+        }
+
+        function bindUiLayoutToggle() {
+            const btn = document.getElementById('ui-layout-toggle-btn');
+            if (btn) btn.addEventListener('click', toggleUiLayoutPreference);
+        }
+
+        function bindUiLayoutMediaListeners() {
+            const addMqlListener = (mql) => {
+                if (!mql) return;
+                if (typeof mql.addEventListener === 'function') {
+                    mql.addEventListener('change', syncUiLayoutBodyClasses);
+                } else if (typeof mql.addListener === 'function') {
+                    mql.addListener(syncUiLayoutBodyClasses);
+                }
+            };
+            addMqlListener(uiLayoutNarrowMql);
+            window.addEventListener('resize', syncUiLayoutBodyClasses);
+            window.addEventListener('orientationchange', () => {
+                window.setTimeout(syncUiLayoutBodyClasses, 150);
+            });
+        }
+
         function updateRotateHintOverlay() {
             const overlay = document.getElementById('rotate-hint-overlay');
             if (!overlay) return;
             const winnerEl = document.getElementById('winner-screen');
             const winnerBlocking = winnerEl && winnerEl.style.display === 'flex';
             const inGame = document.body.classList.contains('in-game');
-            const show = inGame && !winnerBlocking && isLikelyTouchPhoneForRotateHint() && isPortraitViewport();
+            const preferPc = document.body.classList.contains('ui-prefer-pc-layout');
+            const mobileStack = document.body.classList.contains('mobile-stack-layout');
+            const show =
+                inGame &&
+                !winnerBlocking &&
+                !preferPc &&
+                !mobileStack &&
+                isLikelyTouchPhoneForRotateHint() &&
+                isPortraitViewport();
             overlay.style.display = show ? 'flex' : 'none';
         }
 
         function bindRotateHintListeners() {
-            window.addEventListener('resize', updateRotateHintOverlay);
-            window.addEventListener('orientationchange', () => {
-                window.setTimeout(updateRotateHintOverlay, 150);
-            });
             const addMqlListener = (mql) => {
                 if (!mql) return;
                 if (typeof mql.addEventListener === 'function') {
