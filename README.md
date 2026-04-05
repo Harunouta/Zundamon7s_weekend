@@ -1,5 +1,7 @@
 # ずんだもんの休日
 
+* [Let's play!!!](https://harunouta.github.io/Zundamon7s_weekend/)
+
 ## 概要
 「ずんだもんの休日」（以下、本ゲーム）は、**Harunouta**（Xアカウント: [@shounokoto](https://x.com/shounokoto) / [@Harunouta_sh](https://x.com/Harunouta_sh)）が作成した、「[ずんずんPJ](https://zunko.jp/)」のキャラクターを用いた二次創作です。
 
