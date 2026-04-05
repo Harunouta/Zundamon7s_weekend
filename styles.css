@@ -32,55 +32,77 @@
             overflow-x: hidden;
         }
 
-        /* 狭い画面・ゲーム中：固定の音声バー下にタイトル・作者表記が被らないよう確保 */
-        @media (max-width: 900px) {
-            body.in-game {
-                padding-left: max(8px, env(safe-area-inset-left, 0px));
-                padding-right: max(8px, env(safe-area-inset-right, 0px));
-                /* 左上音声2段＋右上作者表記の下からヒーローが始まるよう余白 */
-                padding-top: calc(env(safe-area-inset-top, 0px) + 108px);
-            }
-            body.in-game .hero-pre-game {
-                flex-direction: column;
-                flex-wrap: nowrap;
-                align-items: center;
-                justify-content: flex-start;
-                gap: 8px;
-                width: 100%;
-                max-width: 100%;
-            }
-            body.in-game .hero-pre-game > div:first-of-type {
-                width: 100%;
-                max-width: 100%;
-                box-sizing: border-box;
-            }
-            body.in-game .hero-pre-game img[alt="ずんだもんの休日"] {
-                height: 44px !important;
-                max-width: min(260px, 88vw);
-                width: auto !important;
-                margin-left: auto;
-                margin-right: auto;
-                object-fit: contain;
-            }
-            body.in-game #top-actions {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 8px;
-                width: 100%;
-                max-width: 100%;
-                box-sizing: border-box;
-            }
-            body.in-game #author-badge {
-                top: calc(env(safe-area-inset-top, 0px) + 8px);
-                right: max(8px, env(safe-area-inset-right, 0px));
-                left: auto;
-                max-width: min(168px, 42vw);
-                font-size: 8px;
-                line-height: 1.25;
-                padding: 4px 8px;
-                text-align: right;
-            }
+        /* スマホ版UI・ゲーム中：固定音声バーとヘッダーが被らないよう確保（画面幅は問わない） */
+        body.in-game.mobile-stack-layout {
+            padding-left: max(8px, env(safe-area-inset-left, 0px));
+            padding-right: max(8px, env(safe-area-inset-right, 0px));
+            padding-top: calc(env(safe-area-inset-top, 0px) + 108px);
+        }
+        body.in-game.mobile-stack-layout .hero-pre-game {
+            flex-direction: column;
+            flex-wrap: nowrap;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+        }
+        body.in-game.mobile-stack-layout .hero-pre-game > div:first-of-type {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        body.in-game.mobile-stack-layout .hero-pre-game img[alt="ずんだもんの休日"] {
+            height: 44px !important;
+            max-width: min(260px, 88vw);
+            width: auto !important;
+            margin-left: auto;
+            margin-right: auto;
+            object-fit: contain;
+        }
+        body.in-game.mobile-stack-layout #top-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        body.in-game.mobile-stack-layout #author-badge {
+            top: calc(env(safe-area-inset-top, 0px) + 8px);
+            right: max(8px, env(safe-area-inset-right, 0px));
+            left: auto;
+            max-width: min(168px, 42vw);
+            font-size: 8px;
+            line-height: 1.25;
+            padding: 4px 8px;
+            text-align: right;
+        }
+
+        /* PC版UI・ゲーム中：横並びヘッダー＋盤は最小幅で横スクロール可 */
+        body.in-game.ui-prefer-pc-layout {
+            overflow-x: auto;
+            padding-left: max(8px, env(safe-area-inset-left, 0px));
+            padding-right: max(8px, env(safe-area-inset-right, 0px));
+            padding-top: calc(env(safe-area-inset-top, 0px) + 88px);
+        }
+        body.in-game.ui-prefer-pc-layout .hero-pre-game {
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 10px 16px;
+        }
+        body.in-game.ui-prefer-pc-layout .hero-pre-game img[alt="ずんだもんの休日"] {
+            height: 52px !important;
+            width: auto !important;
+        }
+        body.in-game.ui-prefer-pc-layout #author-badge {
+            font-size: 10px;
+            padding: 4px 8px;
+            top: calc(env(safe-area-inset-top, 0px) + 6px);
+            right: max(8px, env(safe-area-inset-right, 0px));
         }
 
         /* ボタン押下時の translateY で周囲が微妙に動いて見えるのを抑える */
@@ -102,26 +124,6 @@
         body.in-game #top-actions {
             margin-bottom: 0;
             flex: 0 0 auto;
-        }
-
-        @media (min-width: 901px) {
-            body.in-game .hero-pre-game {
-                flex-direction: row;
-                flex-wrap: wrap;
-                align-items: center;
-                justify-content: center;
-                gap: 10px 16px;
-            }
-            body.in-game .hero-pre-game img[alt="ずんだもんの休日"] {
-                height: 52px !important;
-                width: auto !important;
-            }
-            body.in-game #author-badge {
-                font-size: 10px;
-                padding: 4px 8px;
-                top: calc(env(safe-area-inset-top, 0px) + 6px);
-                right: max(8px, env(safe-area-inset-right, 0px));
-            }
         }
 
         /* 左上：1行目 SE+BGM（横並び）、2行目セリフ＋レイアウト切替（横並び） */
@@ -1132,15 +1134,9 @@
             margin: 0;
         }
 
-        /* 狭い画面でPC版：横スクロールで左右分割を維持 */
-        @media (max-width: 900px) {
-            body.in-game.ui-prefer-pc-layout {
-                overflow-x: auto;
-            }
-            body.in-game.ui-prefer-pc-layout #game-screen {
-                min-width: 720px;
-                width: max(100%, 720px);
-            }
+        body.in-game.ui-prefer-pc-layout #game-screen {
+            min-width: 720px;
+            width: max(100%, 720px);
         }
 
         /* スマホ向け：盤を上・操作を下に縦積み */
