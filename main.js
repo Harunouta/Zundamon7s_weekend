@@ -3,7 +3,7 @@
         // ==========================================
         const CONFIG = {
             START_HAPPINESS: 7,
-            START_HEALTH: 15,
+            START_HEALTH: 12,
             MAX_HAPPINESS: 10,
             MAX_HEALTH: 15,
             MIN_VALUE: 0
