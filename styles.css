@@ -641,7 +641,7 @@
             height: auto;
             /* background.PNG 実寸 667×357 に一致（旧359だと object-fit でずれやすい） */
             aspect-ratio: 667 / 357;
-            background: rgba(255,255,255,0.7);
+            background: transparent;
             border-radius: 15px;
             border: 2px solid #e0e0e0;
             overflow: hidden;
@@ -668,6 +668,44 @@
             inset: 0;
             z-index: 5;
         }
+        /* Marker layer from Place*.PNG is hidden; token positions use JS anchors only. */
+        #board-cell-layer {
+            z-index: 6;
+            pointer-events: none;
+            visibility: hidden;
+        }
+        #board-track-layer {
+            z-index: 8;
+        }
+        #status-track-layer {
+            z-index: 9;
+        }
+        .board-tile-place {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            box-sizing: border-box;
+            pointer-events: none;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 2px 6px rgba(0,0,0,0.12);
+        }
+        .board-tile-place-fallback {
+            background: rgba(93, 155, 14, 0.88);
+            border: 1px solid rgba(255,255,255,0.5);
+        }
+        .board-tile-path-index {
+            position: absolute;
+            left: 50%;
+            bottom: 3px;
+            transform: translateX(-50%);
+            font-size: clamp(10px, 2.6vw, 14px);
+            font-weight: 900;
+            line-height: 1;
+            color: #fff;
+            text-shadow: 0 0 3px #000, 0 1px 2px rgba(0,0,0,0.85);
+            pointer-events: none;
+            z-index: 1;
+        }
         /** 当たり座標の宣言用（#board-anchor-spec）。表示しない。駒はJSで同じ比率を描画に使う */
         .board-anchor-spec {
             position: absolute;
@@ -684,8 +722,8 @@
 
         /* プレイヤー駒（left/top はアンカー中心。見た目の中心を data-nx/ny と一致させる） */
         .player-token {
-            width: 26px;
-            height: 26px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             position: absolute;
             border: 2px solid white;
@@ -698,8 +736,8 @@
         }
         .player-token.track-happiness,
         .player-token.track-health {
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             border-width: 1px;
             z-index: 12;
             transition: none;
@@ -771,9 +809,20 @@
             justify-content: flex-start;
             margin-bottom: 4px;
         }
-        #sidebar #turn-metrics span {
+        #sidebar #turn-metrics > span {
             padding: 3px 8px;
             white-space: nowrap;
+        }
+        #sidebar #turn-metrics > span.turn-zunda-metric {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        #sidebar #turn-metrics > span.turn-zunda-metric img {
+            width: 18px;
+            height: 18px;
+            object-fit: contain;
+            flex-shrink: 0;
         }
         details.panel > summary {
             cursor: pointer;
@@ -797,11 +846,22 @@
             margin-bottom: 6px;
             color: #333;
         }
-        #turn-metrics span {
+        #turn-metrics > span {
             background: rgba(255,255,255,0.75);
             border: 1px solid rgba(0,0,0,0.08);
             border-radius: 999px;
             padding: 4px 10px;
+        }
+        #turn-metrics > span.turn-zunda-metric {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #turn-metrics > span.turn-zunda-metric img {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            flex-shrink: 0;
         }
         #current-player-icon {
             width: 26px;
@@ -860,6 +920,60 @@
             height: 100%;
             object-fit: contain;
             display: block;
+        }
+        #hand-panel {
+            margin-top: 8px;
+            padding: 8px;
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.86);
+        }
+        #hand-panel-title {
+            font-size: 0.82rem;
+            font-weight: 800;
+            color: var(--tile-base);
+            margin-bottom: 4px;
+        }
+        #hand-panel-hint {
+            font-size: 0.72rem;
+            color: #444;
+            margin-bottom: 6px;
+            min-height: 1.1em;
+        }
+        #hand-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 140px;
+            overflow-y: auto;
+        }
+        .hand-row {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 4px;
+            align-items: center;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 7px;
+            padding: 4px 5px;
+            font-size: 0.72rem;
+        }
+        .hand-card-name {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .hand-row button {
+            margin: 0;
+            padding: 4px 6px;
+            font-size: 0.66rem;
+            border-radius: 6px;
+            box-shadow: none;
+            min-height: 0;
+        }
+        .hand-row button.nullify-btn {
+            background: #333;
+            color: #fff;
         }
 
         /* ドロー演出 */
@@ -1085,6 +1199,23 @@
             position: relative;
             animation: popIn 0.3s ease;
         }
+        .modal-card-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 8px 0 10px;
+        }
+        .modal-card-pair img {
+            width: 100%;
+            max-height: 190px;
+            object-fit: contain;
+            border-radius: 10px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(255,255,255,0.8);
+        }
+        #modal-card-image-secondary.hidden {
+            display: none;
+        }
         @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
         .card-badge {
@@ -1103,6 +1234,41 @@
         }
         .stat-change span { color: #d63031; }
         .stat-change span.plus { color: #00b894; }
+        #health-bonus-choice-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.56);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1250;
+            backdrop-filter: blur(2px);
+            padding: 16px;
+            box-sizing: border-box;
+        }
+        .health-bonus-choice-modal {
+            background: #fff;
+            border-radius: 14px;
+            border: 4px solid var(--tile-base);
+            padding: 16px;
+            width: min(420px, 100%);
+            text-align: center;
+        }
+        .health-bonus-choice-modal h3 {
+            margin: 0 0 8px;
+            border: none;
+            padding: 0;
+        }
+        .health-bonus-choice-modal p {
+            margin: 0 0 10px;
+            font-size: 0.92rem;
+        }
+        .health-bonus-choice-modal .row {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
 
         /* 結果画面 */
         #winner-screen {
