@@ -64,7 +64,7 @@
     <div id="setup-screen" class="hidden">
         <h2>ゲーム設定</h2>
         <p>プレイ人数 (1～4人)</p>
-        <input type="number" id="player-count" min="1" max="6" value="1" style="font-size:1.5rem; width:80px; text-align:center;">
+        <input type="number" id="player-count" min="1" max="4" value="1" style="font-size:1.5rem; width:80px; text-align:center;">
         <br><br>
         <div id="icon-setup" style="text-align:left; margin: 0 auto 10px; max-width: 420px;">
             <div style="font-weight:bold; margin-bottom:6px;">コマ（アイコン）を選ぶ</div>
@@ -79,6 +79,10 @@
                 <div id="turn-metrics">
                     <span id="turn-happiness">♪:0/0</span>
                     <span id="turn-health">💪:0/0</span>
+                    <span id="turn-zunda" class="turn-zunda-metric">
+                        <img id="turn-zunda-icon" src="player_icon/zunda-icon.PNG" alt="" width="20" height="20" decoding="async">
+                        <span id="turn-zunda-text">餅:0/3</span>
+                    </span>
                 </div>
                 <h3 class="turn-line">ターン: <img id="current-player-icon" alt="icon"><span id="current-player-name">Player 1</span></h3>
                 <div class="dice-row">
@@ -89,6 +93,9 @@
                 </div>
                 <div class="dice-action-slot">
                     <button id="roll-btn" onclick="rollDice()">サイコロを振る</button>
+                    <button id="give-zunda-btn" onclick="giveZundaCard()" style="display:none;">ずんだ餅を渡す</button>
+                    <button id="nullify-btn" onclick="useNullifySkill()" style="display:none;">無かったことにする</button>
+                    <button id="skip-nullify-btn" onclick="skipNullifyChoice()" style="display:none;">捨てずに終了</button>
                     <button id="show-result-btn" onclick="showWinnerScreen()">結果発表を見る</button>
                 </div>
                 <div id="action-hint">準備中...</div>
@@ -112,6 +119,11 @@
                         </div>
                     </div>
                 </div>
+                <div id="hand-panel">
+                    <div id="hand-panel-title">手札（上限5）</div>
+                    <div id="hand-panel-hint"></div>
+                    <div id="hand-list"></div>
+                </div>
             </div>
         </div>
         <div id="board-panel">
@@ -119,7 +131,7 @@
         <div id="board-container">
             <!-- data-logical-* = data-nx/ny の採寸キャンバス。background.PNG の実寸と違う場合、JS が basis/natural で駒位置を補正する。 -->
             <div id="board-anchor-spec" class="board-anchor-spec" hidden aria-hidden="true" data-logical-width="667" data-logical-height="357">
-            <section data-track="board" aria-label="進行マス インデックス 0〜32">
+            <section data-track="board" aria-label="進行マス インデックス 0〜25">
                 <span class="board-anchor-slot" data-cell="0" data-nx="0.02448776" data-ny="0.05023343" data-tag="「盤0」"></span>
                 <span class="board-anchor-slot" data-cell="1" data-nx="0.11114254" data-ny="0.04423656" data-tag="「盤1」"></span>
                 <span class="board-anchor-slot" data-cell="2" data-nx="0.19980394" data-ny="0.04492566" data-tag="「盤2」"></span>
@@ -146,13 +158,6 @@
                 <span class="board-anchor-slot" data-cell="23" data-nx="0.46476762" data-ny="0.62184874" data-tag="「盤23」"></span>
                 <span class="board-anchor-slot" data-cell="24" data-nx="0.02173913" data-ny="0.78571429" data-tag="「盤24」"></span>
                 <span class="board-anchor-slot" data-cell="25" data-nx="0.10976091" data-ny="0.78642685" data-tag="「盤25」"></span>
-                <span class="board-anchor-slot" data-cell="26" data-nx="0.19819038" data-ny="0.78642685" data-tag="「盤26」"></span>
-                <span class="board-anchor-slot" data-cell="27" data-nx="0.28661985" data-ny="0.78642685" data-tag="「盤27」"></span>
-                <span class="board-anchor-slot" data-cell="28" data-nx="0.37504932" data-ny="0.78642685" data-tag="「盤28」"></span>
-                <span class="board-anchor-slot" data-cell="29" data-nx="0.46495173" data-ny="0.78642685" data-tag="「盤29」"></span>
-                <span class="board-anchor-slot" data-cell="30" data-nx="0.02138404" data-ny="0.95164382" data-tag="「盤30」"></span>
-                <span class="board-anchor-slot" data-cell="31" data-nx="0.10944528" data-ny="0.95238095" data-tag="「盤31」"></span>
-                <span class="board-anchor-slot" data-cell="32" data-nx="0.21854618" data-ny="0.92045078" data-tag="「盤32」"></span>
             </section>
             <section data-track="happiness" aria-label="幸福度 0〜10（logo/判定位置/AnchorHappy*.PNG の赤枠中心、667×357）">
                 <span class="board-anchor-slot" data-value="0" data-nx="0.77736132" data-ny="0.92016807" data-tag="「0」"></span>
@@ -186,7 +191,8 @@
                 <span class="board-anchor-slot" data-value="15" data-nx="0.84482759" data-ny="0.07843137" data-tag="「15」"></span>
             </section>
             </div>
-            <img id="board-bg" src="./logo/background.PNG" alt="盤面" width="667" height="357" decoding="async">
+            <img id="board-bg" src="./logo/ver1background.PNG" alt="盤面" width="667" height="357" decoding="async">
+            <div class="board-layer" id="board-cell-layer"></div>
             <div class="board-layer" id="board-track-layer"></div>
             <div class="board-layer" id="status-track-layer"></div>
         </div>
@@ -202,9 +208,23 @@
     <div id="card-overlay">
         <div class="card-modal">
             <div class="card-badge" id="modal-type">TYPE</div>
+            <div id="modal-card-pair" class="modal-card-pair">
+                <img id="modal-card-image-primary" alt="カード画像1">
+                <img id="modal-card-image-secondary" alt="カード画像2">
+            </div>
             <div id="modal-text" class="card-text">テキスト</div>
             <div class="stat-change" id="modal-stats"></div>
             <button onclick="closeCard()">OKなのだ</button>
+        </div>
+    </div>
+    <div id="health-bonus-choice-overlay">
+        <div class="health-bonus-choice-modal">
+            <h3>体力MAXボーナス</h3>
+            <p>追加で引くカードを選んでください。</p>
+            <div class="row">
+                <button type="button" onclick="selectHealthBonusDeck('WAKUWAKU')">WAKUWAKUを引く</button>
+                <button type="button" onclick="selectHealthBonusDeck('DOKIDOKI')">DOKIDOKIを引く</button>
+            </div>
         </div>
     </div>
     <div id="howto-overlay" onclick="closeHowTo()">
@@ -220,6 +240,8 @@
                 <li>カード効果に合わせて移動するのだ</li>
                 <li>移動先がCharactorカード（ずんだもち）だったらまたカードを引くのだ</li>
                 <li>カードの効果に合わせて幸福度/体調/マス目が変化するのだ</li>
+                <li>体力MAXボーナスで追加ドローしたカードは、幸福度/体調は反映されるけど移動効果は反映されないのだ</li>
+                <li>盤面バランス調整でCharactorマスは少し少なめになっているのだ</li>
                 <li>全員がゴールに着いたら終了するのだ</li>
             </ol>
             <div class="row">
