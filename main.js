@@ -8,12 +8,17 @@
             MAX_HEALTH: 15,
             MIN_VALUE: 0
         };
+        const ZUNDA_CARD_LIMIT = 3;
+        const HAND_CARD_LIMIT = 5;
+        const ZUNDA_RECOVERY_HEALTH = 5;
+        const BONUS_VOICE_DELAY_MS = 1400;
 
         const PLAYER_COLORS = ['#ff6b6b', '#1dd1a1', '#54a0ff', '#feca57', '#5f27cd', '#c8d6e5'];
-        const boardBackgroundSrc = 'logo/background.PNG';
+        const boardBackgroundSrc = 'logo/ver1background.PNG';
+        const zundaMetricIconSrc = 'player_icon/zunda-icon.PNG';
         const boardImageIntrinsicWidthPx = 667;
         const boardImageIntrinsicHeightPx = 357;
-        /** 当たり判定・盤面の論理サイズ（背景_当たり判定.PNG / background.PNG と一致） */
+        /** 盤面の論理サイズ（667×357。#board-anchor-spec と同一基準） */
         const boardLogicalWidthPx = 667;
         const boardLogicalHeightPx = 357;
         /**
@@ -22,10 +27,18 @@
          */
         let boardAnchorBasisWidthPx = boardLogicalWidthPx;
         let boardAnchorBasisHeightPx = boardLogicalHeightPx;
+        const BOARD_CELL_COUNT = 26;
+        const BOX_PLACE_FILE_COUNT = 33;
+        const BOX_HAPPINESS_VALUE_MAX = 10;
+        const BOX_HEALTH_VALUE_MAX = 15;
+        /** 同梱 place-vol1.csv のデータ行数（経路0〜32）。box の Place00..32 と 1:1 */
+        const PLACE_VOL1_DATA_ROW_COUNT = 33;
         const TOKEN_SIZE_PX = 26;
         const STATUS_TOKEN_SIZE_PX = 22;
         const TOKEN_OFFSET_STEP_PX = 6;
         const TOKEN_OVERLAP_COLUMNS = 3;
+        /** Place*.PNG 上の当たり位置を窓の中心に合わせるときの論理ビューポート一辺（px）。 */
+        const BOARD_TILE_VIEWPORT_BASE_PX = 56;
 
         const happinessNxStemLeftLinePx = 423;
         const happinessNxStemRightLinePx = 488;
@@ -78,18 +91,158 @@
         function buildBoardTrackAnchorsNormalizedFallback() {
             const yTo357 = boardLogicalHeightPx / 359;
             const rawGrid = [
-                { x: 30, y: 30 }, { x: 89, y: 30 }, { x: 148, y: 30 }, { x: 207, y: 30 }, { x: 266, y: 30 }, { x: 325, y: 30 },
-                { x: 30, y: 89 }, { x: 89, y: 89 }, { x: 148, y: 89 }, { x: 207, y: 89 }, { x: 266, y: 89 }, { x: 325, y: 89 },
-                { x: 30, y: 148 }, { x: 89, y: 148 }, { x: 148, y: 148 }, { x: 207, y: 148 }, { x: 266, y: 148 }, { x: 325, y: 148 },
-                { x: 30, y: 207 }, { x: 89, y: 207 }, { x: 148, y: 207 }, { x: 207, y: 207 }, { x: 266, y: 207 }, { x: 325, y: 207 },
-                { x: 30, y: 266 }, { x: 89, y: 266 }, { x: 148, y: 266 }, { x: 207, y: 266 }, { x: 266, y: 266 }, { x: 325, y: 266 },
-                { x: 30, y: 325 }, { x: 89, y: 325 }, { x: 148, y: 325 }
+                { x: 30, y: 30 }, { x: 89, y: 30 }, { x: 148, y: 30 }, { x: 207, y: 30 }, { x: 266, y: 30 },
+                { x: 30, y: 89 }, { x: 89, y: 89 }, { x: 148, y: 89 }, { x: 207, y: 89 }, { x: 266, y: 89 },
+                { x: 30, y: 148 }, { x: 89, y: 148 }, { x: 148, y: 148 }, { x: 207, y: 148 }, { x: 266, y: 148 },
+                { x: 30, y: 207 }, { x: 89, y: 207 }, { x: 148, y: 207 }, { x: 207, y: 207 }, { x: 266, y: 207 },
+                { x: 30, y: 266 }, { x: 89, y: 266 }, { x: 148, y: 266 }, { x: 207, y: 266 }, { x: 266, y: 266 }, { x: 325, y: 266 }
             ];
             return rawGrid.map((cell, index) => ({
                 nx: cell.x / boardLogicalWidthPx,
                 ny: (cell.y * yTo357) / boardLogicalHeightPx,
                 tag: `「盤${index}」`
             }));
+        }
+
+        const SNAKE_GRID_COLS = 6;
+        const SNAKE_GRID_LEFT_X = 30;
+        const SNAKE_GRID_RIGHT_X = 325;
+        const SNAKE_GRID_TOP_Y = 30;
+        const SNAKE_GRID_BOTTOM_Y = 266;
+
+        function buildBoardTrackAnchorsSnake(cellCount) {
+            const yTo357 = boardLogicalHeightPx / 359;
+            const rows = Math.ceil(cellCount / SNAKE_GRID_COLS);
+            const xSpan = SNAKE_GRID_RIGHT_X - SNAKE_GRID_LEFT_X;
+            const ySpan = SNAKE_GRID_BOTTOM_Y - SNAKE_GRID_TOP_Y;
+            const colStep = SNAKE_GRID_COLS <= 1 ? 0 : xSpan / (SNAKE_GRID_COLS - 1);
+            const rowStep = rows <= 1 ? 0 : ySpan / (rows - 1);
+            const out = [];
+            let idx = 0;
+            for (let r = 0; r < rows && idx < cellCount; r++) {
+                const leftToRight = r % 2 === 0;
+                for (let k = 0; k < SNAKE_GRID_COLS && idx < cellCount; k++) {
+                    const c = leftToRight ? k : (SNAKE_GRID_COLS - 1 - k);
+                    const x = SNAKE_GRID_LEFT_X + c * colStep;
+                    const y = SNAKE_GRID_TOP_Y + r * rowStep;
+                    out.push({
+                        nx: x / boardLogicalWidthPx,
+                        ny: (y * yTo357) / boardLogicalHeightPx,
+                        tag: `「盤${idx}」`
+                    });
+                    idx++;
+                }
+            }
+            return out;
+        }
+
+        // Auto-generated from box/*.PNG (largest red connected region bbox center). Regenerate: python3 tools/generate_box_anchors.py
+        const BOX_ASSET_ANCHOR_BOARD = [{"nx":0.95127436,"ny":0.89355742},{"nx":0.86131934,"ny":0.87815126},{"nx":0.77661169,"ny":0.87254902},{"nx":0.68365817,"ny":0.8767507},{"nx":0.5892054,"ny":0.8767507},{"nx":0.49850075,"ny":0.87394958},{"nx":0.494003,"ny":0.70728291},{"nx":0.58770615,"ny":0.70868347},{"nx":0.67616192,"ny":0.71848739},{"nx":0.76986507,"ny":0.70448179},{"nx":0.85082459,"ny":0.70448179},{"nx":0.94527736,"ny":0.71708683},{"nx":0.94527736,"ny":0.55602241},{"nx":0.85532234,"ny":0.54901961},{"nx":0.76461769,"ny":0.54761905},{"nx":0.67316342,"ny":0.54901961},{"nx":0.58470765,"ny":0.55602241},{"nx":0.49850075,"ny":0.54621849},{"nx":0.50074963,"ny":0.38515406},{"nx":0.58995502,"ny":0.3977591},{"nx":0.67691154,"ny":0.38655462},{"nx":0.76311844,"ny":0.39915966},{"nx":0.84857571,"ny":0.39355742},{"nx":0.94302849,"ny":0.39355742},{"nx":0.93628186,"ny":0.24509804},{"nx":0.84332834,"ny":0.23529412},{"nx":0.76386807,"ny":0.23809524},{"nx":0.67616192,"ny":0.24509804},{"nx":0.5832084,"ny":0.25910364},{"nx":0.49775112,"ny":0.25490196},{"nx":0.49850075,"ny":0.10644258},{"nx":0.5832084,"ny":0.1022409},{"nx":0.66641679,"ny":0.10784314}];
+        const BOX_ASSET_ANCHOR_HAPPINESS = [{"nx":0.1964018,"ny":0.92436975},{"nx":0.05247376,"ny":0.90196078},{"nx":0.16491754,"ny":0.80252101},{"nx":0.05847076,"ny":0.67226891},{"nx":0.16041979,"ny":0.54481793},{"nx":0.06446777,"ny":0.44257703},{"nx":0.16566717,"ny":0.34313725},{"nx":0.06071964,"ny":0.27030812},{"nx":0.16491754,"ny":0.21008403},{"nx":0.05547226,"ny":0.11064426},{"nx":0.16191904,"ny":0.08263305}];
+        const BOX_ASSET_ANCHOR_HEALTH = [{"nx":0.26911544,"ny":0.92717087},{"nx":0.38455772,"ny":0.92016807},{"nx":0.26911544,"ny":0.78431373},{"nx":0.36956522,"ny":0.77030812},{"nx":0.26086957,"ny":0.66666667},{"nx":0.36806597,"ny":0.63585434},{"nx":0.26686657,"ny":0.56162465},{"nx":0.37106447,"ny":0.4929972},{"nx":0.26161919,"ny":0.43977591},{"nx":0.36956522,"ny":0.35854342},{"nx":0.25037481,"ny":0.31652661},{"nx":0.36506747,"ny":0.26890756},{"nx":0.26536732,"ny":0.20308123},{"nx":0.37706147,"ny":0.16526611},{"nx":0.25487256,"ny":0.08123249},{"nx":0.36356822,"ny":0.07002801}];
+
+        /** box/Place{i}.PNG の赤枠（最大連結成分）中心を経路 i に対応（tools/generate_box_anchors.py で PNG から算出した定数） */
+        let boxBoardAnchorsByPathIndex = null;
+        /** syncBoardTrackRowsToBoxAnchors が成功したときだけ true（Place 画像とアンカーが一致） */
+        let boardTrackUsesBoxPlaceAnchors = false;
+        let boxHappinessAnchorsByValue = null;
+        let boxHealthAnchorsByValue = null;
+
+        function formatBoxPngTwoDigits(value) {
+            const n = Math.floor(Number(value));
+            if (!Number.isFinite(n) || n < 0) return '00';
+            return String(n).padStart(2, '0');
+        }
+
+        /**
+         * place-vol1 前提: 先頭スタート、No が 0..n-1 が行順と一致（経路0＝右下＝Place00）。
+         */
+        function isBoardCsvAlignedWithPlacePathIndexing(rows) {
+            if (!Array.isArray(rows) || rows.length === 0) return false;
+            const firstType = String(rows[0].type || '').trim();
+            if (firstType !== 'スタート') return false;
+            for (let pathIndex = 0; pathIndex < rows.length; pathIndex++) {
+                const noVal = parseInt(String(rows[pathIndex].no).trim(), 10);
+                if (Number.isNaN(noVal) || noVal !== pathIndex) return false;
+            }
+            return true;
+        }
+
+        function isBoxAnchorDataComplete() {
+            return (
+                Array.isArray(boxBoardAnchorsByPathIndex) &&
+                boxBoardAnchorsByPathIndex.length === BOX_PLACE_FILE_COUNT &&
+                !boxBoardAnchorsByPathIndex.some((a) => !a) &&
+                Array.isArray(boxHappinessAnchorsByValue) &&
+                boxHappinessAnchorsByValue.length === BOX_HAPPINESS_VALUE_MAX + 1 &&
+                !boxHappinessAnchorsByValue.some((a) => !a) &&
+                Array.isArray(boxHealthAnchorsByValue) &&
+                boxHealthAnchorsByValue.length === BOX_HEALTH_VALUE_MAX + 1 &&
+                !boxHealthAnchorsByValue.some((a) => !a)
+            );
+        }
+
+        function syncBoardTrackRowsToBoxAnchors(rows) {
+            boardTrackUsesBoxPlaceAnchors = false;
+            if (!isBoxAnchorDataComplete() || !Array.isArray(rows) || rows.length === 0) return false;
+            if (rows.length !== PLACE_VOL1_DATA_ROW_COUNT) return false;
+            if (!isBoardCsvAlignedWithPlacePathIndexing(rows)) return false;
+            if (rows.length > boxBoardAnchorsByPathIndex.length) return false;
+            const mapped = [];
+            for (let pathIndex = 0; pathIndex < rows.length; pathIndex++) {
+                const hit = boxBoardAnchorsByPathIndex[pathIndex];
+                if (!hit) return false;
+                mapped.push({
+                    nx: hit.nx,
+                    ny: hit.ny,
+                    tag: `「盤${pathIndex}」`
+                });
+            }
+            domBoardTrackAnchors = mapped;
+            boardTrackAnchors = mapped;
+            boardTrackUsesBoxPlaceAnchors = true;
+            return true;
+        }
+
+        function applyHappinessAndHealthFromBoxAnchors() {
+            if (!isBoxAnchorDataComplete()) return;
+            happinessTrackAnchors = boxHappinessAnchorsByValue.map((hit, value) => ({
+                nx: hit.nx,
+                ny: hit.ny,
+                tag: `「${value}」`
+            }));
+            healthTrackAnchors = boxHealthAnchorsByValue.map((hit, value) => ({
+                nx: hit.nx,
+                ny: hit.ny,
+                tag: `「${value}」`
+            }));
+        }
+
+        function initAnchorsFromBoxAssetTable() {
+            if (
+                !Array.isArray(BOX_ASSET_ANCHOR_BOARD) ||
+                BOX_ASSET_ANCHOR_BOARD.length !== BOX_PLACE_FILE_COUNT ||
+                !Array.isArray(BOX_ASSET_ANCHOR_HAPPINESS) ||
+                BOX_ASSET_ANCHOR_HAPPINESS.length !== BOX_HAPPINESS_VALUE_MAX + 1 ||
+                !Array.isArray(BOX_ASSET_ANCHOR_HEALTH) ||
+                BOX_ASSET_ANCHOR_HEALTH.length !== BOX_HEALTH_VALUE_MAX + 1
+            ) {
+                return;
+            }
+            boxBoardAnchorsByPathIndex = BOX_ASSET_ANCHOR_BOARD.map((p, pathIndex) => ({
+                nx: p.nx,
+                ny: p.ny,
+                tag: `「盤${pathIndex}」`
+            }));
+            boxHappinessAnchorsByValue = BOX_ASSET_ANCHOR_HAPPINESS.map((p) => ({
+                nx: p.nx,
+                ny: p.ny
+            }));
+            boxHealthAnchorsByValue = BOX_ASSET_ANCHOR_HEALTH.map((p) => ({
+                nx: p.nx,
+                ny: p.ny
+            }));
+            applyHappinessAndHealthFromBoxAnchors();
         }
 
         function parseBoardAnchorAttributeNumber(el, attrName) {
@@ -126,7 +279,7 @@
                 board[cell] = { nx, ny, tag };
             });
             if (!boardOk) return null;
-            if (board.length < 33 || board.slice(0, 33).some((a) => !a)) return null;
+            if (board.length < BOARD_CELL_COUNT || board.slice(0, BOARD_CELL_COUNT).some((a) => !a)) return null;
 
             const happiness = [];
             let happinessOk = true;
@@ -166,6 +319,7 @@
         }
 
         let boardTrackAnchors = [];
+        let domBoardTrackAnchors = null;
         let happinessTrackAnchors = [];
         let healthTrackAnchors = [];
 
@@ -182,17 +336,33 @@
             const parsed = parseBoardAnchorSpecFromDom();
             if (parsed) {
                 boardTrackAnchors = parsed.board;
+                domBoardTrackAnchors = parsed.board;
                 happinessTrackAnchors = parsed.happiness;
                 healthTrackAnchors = parsed.health;
                 return;
             }
             boardTrackAnchors = buildBoardTrackAnchorsNormalizedFallback();
+            domBoardTrackAnchors = boardTrackAnchors;
             happinessTrackAnchors = buildHappinessAnchorsNormalizedFallback();
             healthTrackAnchors = buildHealthAnchorsNormalizedFallback();
         }
 
+        function applyBoardTrackAnchorsForCellCount(cellCount) {
+            if (
+                domBoardTrackAnchors &&
+                domBoardTrackAnchors.length === cellCount &&
+                !domBoardTrackAnchors.slice(0, cellCount).some((a) => !a)
+            ) {
+                boardTrackAnchors = domBoardTrackAnchors;
+                return;
+            }
+            boardTrackAnchors = buildBoardTrackAnchorsSnake(cellCount);
+            boardTrackUsesBoxPlaceAnchors = false;
+        }
+
         initBoardAnchorBasisFromDom();
         initBoardAnchorMapsFromDom();
+        initAnchorsFromBoxAssetTable();
 
         let boardContainerResizeObserver = null;
         let boardResizeFallbackAttached = false;
@@ -215,7 +385,11 @@
             pendingMove: null,
             pendingDraw: null,
             lastDrawnCard: null,
-            lastDrawnCardPending: null
+            lastDrawnCardPending: null,
+            turnCount: 0,
+            pendingHandLimitPlayerId: null,
+            pendingHandLimitResolve: null,
+            pendingNullifyChoicePlayerId: null
         };
 
         // ==========================================
@@ -242,17 +416,23 @@
         const defaultLoadStatus = document.getElementById('default-load-status');
 
         const DEFAULT_DATA_PATHS = {
-            placeCsv: 'place-vol2.csv',
+            placeCsv: 'place-vol1.csv',
             cardCsv: 'card-ver2.csv'
         };
 
         const ASSET_PATHS = {
             logo: 'logo/logo.PNG',
             cardFrontDir: 'card/front/',
+            zundaCard: 'card/back/Zunda.PNG',
             cardBack: {
                 WAKUWAKU: 'card/back/Wback.PNG',
                 DOKIDOKI: 'card/back/Dback.PNG',
                 CharactorCard: 'card/back/Cback.PNG'
+            },
+            boardTileBack: {
+                WAKUWAKU: 'logo/background-Wback.PNG',
+                DOKIDOKI: 'logo/background-Dback.PNG',
+                CharactorCard: 'logo/background-Cback.PNG'
             }
         };
 
@@ -681,10 +861,12 @@
         }
 
         function getCardFrontPath(card) {
+            if (card && card.type === 'ZUNDA_MOCHI') return ASSET_PATHS.zundaCard;
             return `${ASSET_PATHS.cardFrontDir}${card.no}front.PNG`;
         }
 
         function getDeckBackPath(deckType) {
+            if (deckType === 'ZUNDA_MOCHI') return ASSET_PATHS.zundaCard;
             return ASSET_PATHS.cardBack[deckType] || '';
         }
 
@@ -732,6 +914,24 @@
             el.innerText = text;
         }
 
+        function updateSpecialActionButtons(player) {
+            const giveBtn = document.getElementById('give-zunda-btn');
+            const nullifyBtn = document.getElementById('nullify-btn');
+            const skipNullifyBtn = document.getElementById('skip-nullify-btn');
+            if (!giveBtn || !nullifyBtn || !skipNullifyBtn) return;
+            if (!player || state.isGameEnded) {
+                giveBtn.style.display = 'none';
+                nullifyBtn.style.display = 'none';
+                skipNullifyBtn.style.display = 'none';
+                return;
+            }
+            const canGive = player.zundaCards > 0 && state.players.some((p) => p.id !== player.id && !p.finished);
+            const pendingNullify = state.pendingNullifyChoicePlayerId === player.id;
+            giveBtn.style.display = canGive ? 'block' : 'none';
+            nullifyBtn.style.display = pendingNullify ? 'block' : 'none';
+            skipNullifyBtn.style.display = pendingNullify ? 'block' : 'none';
+        }
+
         function setStepButtonVisible(visible) {
             const btn = document.getElementById('step-btn');
             if (!btn) return;
@@ -758,6 +958,158 @@
 
         function clearDeckClickables() {
             ['WAKUWAKU', 'DOKIDOKI', 'CharactorCard'].forEach(t => setDeckClickable(t, false));
+        }
+
+        function createZundaCard() {
+            return {
+                type: 'ZUNDA_MOCHI',
+                no: 'ZUNDA',
+                text: 'ずんだ餅カードを手に入れたのだ！',
+                happiness: 0,
+                health: 0,
+                move: 0
+            };
+        }
+
+        function grantZundaCard(player, reasonText) {
+            if (!player) return false;
+            if (player.zundaCards >= ZUNDA_CARD_LIMIT) return false;
+            if (player.lastZundaGrantTurn === state.turnCount) return false;
+            player.zundaCards += 1;
+            player.lastZundaGrantTurn = state.turnCount;
+            const zundaCard = createZundaCard();
+            state.lastDrawnCardPending = zundaCard;
+            state.lastDrawnCard = zundaCard;
+            updateLastDrawnCardUi();
+            addLog(`${player.name} は ずんだ餅カードを獲得（${reasonText}）`, player.id);
+            return true;
+        }
+
+        function tryGrantZundaAtTurnStart(player) {
+            if (!player) return;
+            if (player.happiness !== CONFIG.MAX_HAPPINESS) return;
+            const granted = grantZundaCard(player, '幸福度MAX維持');
+            if (granted) {
+                setActionHint(`幸福度MAX効果で ${player.name} に ずんだ餅カードが生成されたのだ。`);
+            }
+        }
+
+        function recoverFromZeroHealthWithZunda(player) {
+            if (!player || player.health !== CONFIG.MIN_VALUE) return false;
+            if (player.zundaCards <= 0) return false;
+            player.zundaCards -= 1;
+            player.health = Math.min(CONFIG.MAX_HEALTH, player.health + ZUNDA_RECOVERY_HEALTH);
+            addLog(`${player.name} は ずんだ餅を食べて体調を ${ZUNDA_RECOVERY_HEALTH} 回復。`, player.id);
+            return true;
+        }
+
+        let healthBonusChoiceResolver = null;
+        function chooseHealthMaxBonusDeckType(onSelected) {
+            healthBonusChoiceResolver = onSelected;
+            const overlay = document.getElementById('health-bonus-choice-overlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+
+        function selectHealthBonusDeck(deckType) {
+            const overlay = document.getElementById('health-bonus-choice-overlay');
+            if (overlay) overlay.style.display = 'none';
+            const resolver = healthBonusChoiceResolver;
+            healthBonusChoiceResolver = null;
+            if (typeof resolver === 'function') resolver(deckType);
+        }
+
+        function applyCardEffects(player, cards) {
+            const total = cards.reduce((acc, card) => {
+                acc.happiness += card.happiness || 0;
+                acc.health += card.health || 0;
+                acc.move += card.move || 0;
+                return acc;
+            }, { happiness: 0, health: 0, move: 0 });
+            const previousHappiness = player.happiness;
+            player.happiness = clampValue(player.happiness + total.happiness, CONFIG.MIN_VALUE, CONFIG.MAX_HAPPINESS);
+            player.health = clampValue(player.health + total.health, CONFIG.MIN_VALUE, CONFIG.MAX_HEALTH);
+            if (previousHappiness < CONFIG.MAX_HAPPINESS && player.happiness === CONFIG.MAX_HAPPINESS) {
+                grantZundaCard(player, '幸福度MAX到達');
+            }
+            return total;
+        }
+
+        function playBonusCardVoices(primaryCard, bonusCard) {
+            playCardVoice(primaryCard);
+            if (!bonusCard) return;
+            setTimeout(() => {
+                playCardVoice(bonusCard);
+            }, BONUS_VOICE_DELAY_MS);
+        }
+
+        function enforceHandLimitWithForget(player) {
+            if (!player) return false;
+            return player.hand.length > HAND_CARD_LIMIT;
+        }
+
+        function beginHandLimitResolution(player, onResolved) {
+            state.pendingHandLimitPlayerId = player.id;
+            state.pendingHandLimitResolve = onResolved || null;
+            setActionHint('手札が上限を超えたのだ。手札パネルの「忘れる」で1枚捨ててください。');
+            renderHandPanel();
+        }
+
+        function resolveHandLimitIfReady(player) {
+            if (!player) return;
+            if (state.pendingHandLimitPlayerId !== player.id) return;
+            if (player.hand.length > HAND_CARD_LIMIT) return;
+            const resolver = state.pendingHandLimitResolve;
+            state.pendingHandLimitPlayerId = null;
+            state.pendingHandLimitResolve = null;
+            renderHandPanel();
+            if (typeof resolver === 'function') resolver();
+        }
+
+        function getHandCardLabel(card) {
+            if (!card) return 'unknown';
+            if (card.type === 'ZUNDA_MOCHI') return 'ずんだ餅';
+            return card.no || card.type || 'CARD';
+        }
+
+        function renderHandPanel() {
+            const listEl = document.getElementById('hand-list');
+            const hintEl = document.getElementById('hand-panel-hint');
+            if (!listEl || !hintEl) return;
+            const player = state.players[state.currentPlayerIndex];
+            if (!player || state.isGameEnded) {
+                listEl.innerHTML = '';
+                hintEl.innerText = '';
+                return;
+            }
+            const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
+            const canNullify = player.happiness === CONFIG.MIN_VALUE;
+            hintEl.innerText = isPendingLimit
+                ? `上限${HAND_CARD_LIMIT}枚を超えています。忘れるで1枚捨ててください。`
+                : `${player.name} の手札 ${player.hand.length}/${HAND_CARD_LIMIT}`;
+            if (player.hand.length <= 0) {
+                listEl.innerHTML = '<div class="hand-row"><span class="hand-card-name">手札なし</span></div>';
+                return;
+            }
+            listEl.innerHTML = player.hand.map((card, index) => {
+                const forgetDisabled = (!isPendingLimit) ? 'disabled' : '';
+                const nullifyDisabled = (!canNullify || isPendingLimit) ? 'disabled' : '';
+                return `<div class="hand-row">
+                    <span class="hand-card-name">${index + 1}. ${getHandCardLabel(card)}</span>
+                    <button type="button" onclick="forgetHandCard(${index})" ${forgetDisabled}>忘れる</button>
+                    <button type="button" class="nullify-btn" onclick="applyNullifyFromHand(${index})" ${nullifyDisabled}>無かった</button>
+                </div>`;
+            }).join('');
+        }
+
+        function beginNullifyChoice(player) {
+            state.pendingNullifyChoicePlayerId = player.id;
+            state.isProcessing = false;
+            setActionHint('幸福度0です。手札から「無かった」を使うか、「捨てずに終了」を選んでください。');
+            updateTurnUI();
+        }
+
+        function clearNullifyChoice() {
+            state.pendingNullifyChoicePlayerId = null;
         }
 
         function beginMoveByClick(pIndex, steps, source) {
@@ -987,7 +1339,7 @@
             const picker = document.getElementById('icon-picker');
             if (!picker) return;
 
-            const safeCount = Math.max(1, Math.min(6, playerCount));
+            const safeCount = Math.max(1, Math.min(4, playerCount));
             const currentValues = getPlayerIconSelections();
             picker.innerHTML = '';
 
@@ -1117,7 +1469,17 @@
                     move: parseInt(row[6]) || 0
                 })).filter(c => c.type);
 
-                setDefaultLoadStatus('同梱CSVの読み込みに成功しました。');
+                if (!syncBoardTrackRowsToBoxAnchors(tempBoardData)) {
+                    applyBoardTrackAnchorsForCellCount(tempBoardData.length);
+                }
+                let loadOkMsg = '同梱CSVの読み込みに成功しました。';
+                if (
+                    tempBoardData.length !== PLACE_VOL1_DATA_ROW_COUNT ||
+                    !isBoardCsvAlignedWithPlacePathIndexing(tempBoardData)
+                ) {
+                    loadOkMsg += ` box座標は place-vol1 相当（${PLACE_VOL1_DATA_ROW_COUNT}マス・先頭スタート・No0連番）のときのみ使えます。`;
+                }
+                setDefaultLoadStatus(loadOkMsg);
                 showSetupScreen();
             } catch (e) {
                 setDefaultLoadStatus('自動読み込みに失敗。下のファイル選択で読み込めます。');
@@ -1133,6 +1495,9 @@
                     no: row[0],
                     type: row[1].trim()
                 }));
+                if (!syncBoardTrackRowsToBoxAnchors(tempBoardData)) {
+                    applyBoardTrackAnchorsForCellCount(tempBoardData.length);
+                }
 
                 // card.csv
                 const cardData = await parseFile(cardInput.files[0]);
@@ -1183,6 +1548,8 @@
             tryLoadDefaultData();
             setupBoardBackgroundImage();
             setupBoardContainerResizeObserver();
+            const turnZundaIconEl = document.getElementById('turn-zunda-icon');
+            if (turnZundaIconEl) turnZundaIconEl.src = zundaMetricIconSrc;
         });
 
         function applyBoardImageLayout() {
@@ -1544,11 +1911,25 @@
 
         function startGame() {
             let count = parseInt(document.getElementById('player-count').value);
-            if (count < 1) count = 1; if (count > 6) count = 6;
+            if (count < 1) count = 1;
+            if (count > 4) count = 4;
+
+            if (!Array.isArray(tempBoardData) || tempBoardData.length === 0) {
+                alert('マス目データを読み込んでください。');
+                return;
+            }
+            if (!Array.isArray(tempCardData) || tempCardData.length === 0) {
+                alert('カードデータを読み込んでください。');
+                return;
+            }
 
             if (pendingGameStartTurnSeTimeoutId !== null) {
                 clearTimeout(pendingGameStartTurnSeTimeoutId);
                 pendingGameStartTurnSeTimeoutId = null;
+            }
+
+            if (!syncBoardTrackRowsToBoxAnchors(tempBoardData)) {
+                applyBoardTrackAnchorsForCellCount(tempBoardData.length);
             }
 
             playSe('gamestart');
@@ -1564,6 +1945,10 @@
             state.pendingMove = null;
             state.pendingDraw = null;
             state.lastDrawnCard = null;
+            state.pendingHandLimitPlayerId = null;
+            state.pendingHandLimitResolve = null;
+            state.pendingNullifyChoicePlayerId = null;
+            state.turnCount = 1;
 
             const selectedIcons = getPlayerIconSelections();
             
@@ -1577,7 +1962,9 @@
                     finished: false,
                     color: PLAYER_COLORS[i],
                     iconPath: selectedIcons[i] || PLAYER_ICON_PATHS[i] || PLAYER_ICON_PATHS[0],
-                    hand: [] // 手札（引いたカード）
+                    hand: [], // 手札（引いたカード）
+                    zundaCards: 0,
+                    lastZundaGrantTurn: -1
                 });
             }
 
@@ -1631,6 +2018,7 @@
             });
 
             state.currentPlayerIndex = 0;
+            tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
             updateTurnUI();
             pendingGameStartTurnSeTimeoutId = setTimeout(() => {
                 pendingGameStartTurnSeTimeoutId = null;
@@ -1685,6 +2073,10 @@
             if (state.isProcessing || state.isGameEnded) return;
             const current = state.players[state.currentPlayerIndex];
             if (current && current.finished) return;
+            if (current && state.pendingHandLimitPlayerId === current.id) {
+                setActionHint('先に手札パネルで「忘れる」を実行してください。');
+                return;
+            }
             if (pendingGameStartTurnSeTimeoutId !== null) {
                 clearTimeout(pendingGameStartTurnSeTimeoutId);
                 pendingGameStartTurnSeTimeoutId = null;
@@ -1719,6 +2111,64 @@
             beginMoveByClick(pIndex, steps, source);
         }
 
+        function drawHealthMaxBonusCard(player, primaryCard) {
+            chooseHealthMaxBonusDeckType((deckType) => {
+                const deck = state.decks[deckType];
+                let bonusCard = null;
+                if (!deck || deck.length === 0) {
+                    addLog(`体力MAXボーナス: ${deckType} の山札が空だったのだ。`, player.id);
+                } else {
+                    bonusCard = deck.pop();
+                    player.hand.push(bonusCard);
+                    recordDebug("DRAW_CARD_BONUS", player.id, {
+                        cardNo: bonusCard.no,
+                        cardType: bonusCard.type,
+                        remainingDeck: deck.length
+                    });
+                }
+
+                const finishFlow = () => {
+                    const effectCards = bonusCard
+                        ? [primaryCard, { ...bonusCard, move: 0 }]
+                        : [primaryCard];
+                    const total = applyCardEffects(player, effectCards);
+                    renderBoard();
+                    updateTurnUI();
+                    updateDeckUi();
+                    state.lastDrawnCard = bonusCard || primaryCard;
+                    state.lastDrawnCardPending = null;
+                    updateLastDrawnCardUi();
+                    if (bonusCard) {
+                        addLog(`体力MAXボーナス追加: ${bonusCard.text}`, player.id, bonusCard);
+                    }
+                    playBonusCardVoices(primaryCard, bonusCard);
+                    const text = bonusCard
+                        ? `${primaryCard.text}\n\n--- 追加ドロー ---\n${bonusCard.text}`
+                        : primaryCard.text;
+                    showModal(primaryCard, () => {
+                        if (total.move !== 0) {
+                            addLog(`効果合計で ${total.move} マス移動`, player.id);
+                            movePlayer(state.currentPlayerIndex, total.move, 'card');
+                        } else {
+                            endTurn();
+                        }
+                    }, {
+                        skipCardVoice: true,
+                        secondaryCard: bonusCard,
+                        overrideText: text,
+                        statsOverride: total
+                    });
+                };
+
+                const needsForget = enforceHandLimitWithForget(player);
+                if (needsForget) {
+                    beginHandLimitResolution(player, finishFlow);
+                    return;
+                }
+                finishFlow();
+            });
+        }
+
         function checkTile(player, source) {
             const tile = state.board[player.position];
             const type = tile.type;
@@ -1730,13 +2180,32 @@
                 return;
             }
 
+            if (player.health === CONFIG.MIN_VALUE && !recoverFromZeroHealthWithZunda(player)) {
+                addLog(`${player.name} は体調0のためカードを引けないのだ。`, player.id);
+                endTurn();
+                return;
+            }
+            if (player.health > CONFIG.MIN_VALUE) {
+                updateTurnUI();
+            }
+            if (type === 'W' && player.happiness === CONFIG.MIN_VALUE) {
+                addLog(`${player.name} は幸福度0で WAKUWAKU を引けないのだ。`, player.id);
+                beginNullifyChoice(player);
+                return;
+            }
+            if (type === 'D' && player.happiness === CONFIG.MIN_VALUE) {
+                addLog(`${player.name} は幸福度0で DOKIDOKI を引けないのだ。`, player.id);
+                beginNullifyChoice(player);
+                return;
+            }
+
             if (type === 'W') beginDrawByClick('WAKUWAKU', player);
             else if (type === 'D') beginDrawByClick('DOKIDOKI', player);
             else if (type === 'C') beginDrawByClick('CharactorCard', player);
             else endTurn();
         }
 
-        function drawCard(type, player) {
+        function drawCard(type, player, options = {}) {
             // デッキから取得 (Pop)
             const deck = state.decks[type];
             
@@ -1749,9 +2218,12 @@
             
             // カードを1枚引く
             const card = deck.pop();
-            
-            // 手札に追加
+            const triggerHealthBonus = !options.skipHealthBonus
+                && (type === 'WAKUWAKU' || type === 'DOKIDOKI')
+                && player.health === CONFIG.MAX_HEALTH;
+
             player.hand.push(card);
+            const needsForget = enforceHandLimitWithForget(player);
             state.lastDrawnCardPending = card;
 
             recordDebug("DRAW_CARD", player.id, { 
@@ -1760,14 +2232,9 @@
                 remainingDeck: deck.length
             });
 
-            player.happiness += card.happiness;
-            player.health += card.health;
-
-            if (player.happiness > CONFIG.MAX_HAPPINESS) player.happiness = CONFIG.MAX_HAPPINESS;
-            if (player.happiness < CONFIG.MIN_VALUE) player.happiness = CONFIG.MIN_VALUE;
-
-            if (player.health > CONFIG.MAX_HEALTH) player.health = CONFIG.MAX_HEALTH;
-            if (player.health < CONFIG.MIN_VALUE) player.health = CONFIG.MIN_VALUE;
+            if (!triggerHealthBonus) {
+                applyCardEffects(player, [card]);
+            }
 
             renderBoard();
             updateTurnUI();
@@ -1778,13 +2245,31 @@
                 state.lastDrawnCard = state.lastDrawnCardPending;
                 state.lastDrawnCardPending = null;
                 updateLastDrawnCardUi();
-                showModal(card, () => {
-                    if (card.move !== 0) {
-                        addLog(`効果で ${card.move} マス移動`, player.id);
-                        movePlayer(state.currentPlayerIndex, card.move, 'card');
+                if (triggerHealthBonus) {
+                    const startBonusFlow = () => drawHealthMaxBonusCard(player, card);
+                    if (needsForget) {
+                        beginHandLimitResolution(player, startBonusFlow);
                     } else {
-                        endTurn();
+                        startBonusFlow();
                     }
+                    return;
+                }
+                showModal(card, () => {
+                    const continueCurrentCard = () => {
+                        if (card.move !== 0) {
+                            addLog(`効果で ${card.move} マス移動`, player.id);
+                            movePlayer(state.currentPlayerIndex, card.move, 'card');
+                        } else {
+                            endTurn();
+                        }
+                    };
+                    if (needsForget) {
+                        beginHandLimitResolution(player, () => {
+                            continueCurrentCard();
+                        });
+                        return;
+                    }
+                    continueCurrentCard();
                 }, { skipCardVoice: true });
                 queuePlayCardVoiceAfterCardDrawSe(card);
             });
@@ -1793,6 +2278,7 @@
         function endTurn() {
             if (state.isGameEnded) return;
             state.isProcessing = false;
+            clearNullifyChoice();
             clearDeckClickables();
             state.pendingDraw = null;
             state.pendingMove = null;
@@ -1806,6 +2292,8 @@
                 return;
             }
             state.currentPlayerIndex = getNextPlayerIndex();
+            state.turnCount += 1;
+            tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
             updateTurnUI();
             setActionHint('サイコロを振ってください。');
             document.getElementById('roll-btn').disabled = false;
@@ -1831,13 +2319,16 @@
         // ==========================================
 
         function renderBoard() {
+            const boardCellLayer = document.getElementById('board-cell-layer');
             const boardLayer = document.getElementById('board-track-layer');
             const statusLayer = document.getElementById('status-track-layer');
-            if (!boardLayer || !statusLayer) return;
+            if (!boardCellLayer || !boardLayer || !statusLayer) return;
             const layout = getBoardImageLayout();
             if (!layout) return;
+            boardCellLayer.innerHTML = '';
             boardLayer.innerHTML = '';
             statusLayer.innerHTML = '';
+            renderBoardTileCells(boardCellLayer, layout);
 
             const groupedBoardTokens = new Map();
             state.players.forEach(player => {
@@ -1909,6 +2400,53 @@
             return token;
         }
 
+        /**
+         * 経路 pathIndex と Place{pathIndex}.PNG・boardTrackAnchors[pathIndex] を対応。
+         * boardTrackUsesBoxPlaceAnchors のときのみ Place 背景（CSV が経路0=スタート・No 連番で同期済み）。
+         */
+        function renderBoardTileCells(boardCellLayer, layout) {
+            const boardCount = Math.min(state.board.length, boardTrackAnchors.length);
+            const basisW = boardAnchorBasisWidthPx;
+            const basisH = boardAnchorBasisHeightPx;
+            const natW = Math.max(1e-9, layout.natW);
+            const natH = Math.max(1e-9, layout.natH);
+            const drawW = layout.drawW;
+            const drawH = layout.drawH;
+            for (let pathIndex = 0; pathIndex < boardCount; pathIndex++) {
+                const tile = state.board[pathIndex];
+                const anchor = boardTrackAnchors[pathIndex];
+                if (!tile || !anchor) continue;
+                const fileKey = formatBoxPngTwoDigits(pathIndex);
+                const nxBmp = anchor.nx * (basisW / natW);
+                const nyBmp = anchor.ny * (basisH / natH);
+                const pos = computeTokenScreenPos(anchor, 0, BOARD_TILE_VIEWPORT_BASE_PX, layout);
+                const viewportPx = pos.tokenPx;
+                const tileEl = document.createElement('div');
+                tileEl.className = boardTrackUsesBoxPlaceAnchors ? 'board-tile-place' : 'board-tile-place board-tile-place-fallback';
+                tileEl.dataset.pathIndex = String(pathIndex);
+                const isStart = pathIndex === 0 && String(tile.type || '').trim() === 'スタート';
+                tileEl.title = isStart
+                    ? `経路0＝スタート（右下）＝Place00.PNG／${tile.type}`
+                    : `経路${pathIndex}＝Place${fileKey}.PNGの位置／No.${tile.no}・${tile.type}`;
+                tileEl.style.width = `${viewportPx}px`;
+                tileEl.style.height = `${viewportPx}px`;
+                tileEl.style.left = `${pos.left}px`;
+                tileEl.style.top = `${pos.top}px`;
+                if (boardTrackUsesBoxPlaceAnchors) {
+                    tileEl.style.backgroundImage = `url(box/Place${fileKey}.PNG)`;
+                    tileEl.style.backgroundSize = `${drawW}px ${drawH}px`;
+                    tileEl.style.backgroundPosition = `${viewportPx / 2 - nxBmp * drawW}px ${viewportPx / 2 - nyBmp * drawH}px`;
+                    tileEl.style.backgroundRepeat = 'no-repeat';
+                }
+                const pathLabel = document.createElement('span');
+                pathLabel.className = 'board-tile-path-index';
+                pathLabel.textContent = String(pathIndex);
+                pathLabel.setAttribute('aria-hidden', 'true');
+                tileEl.appendChild(pathLabel);
+                boardCellLayer.appendChild(tileEl);
+            }
+        }
+
         function computeTokenScreenPos(anchorNorm, overlapIndex, tokenSizeBasePx, layout) {
             const layoutScale = layout.layoutScale;
             const step = TOKEN_OFFSET_STEP_PX * layoutScale;
@@ -1941,6 +2479,7 @@
         function updateTurnUI() {
             if (state.isGameEnded) {
                 document.getElementById('current-player-name').innerText = "終了";
+                updateSpecialActionButtons(null);
                 return;
             }
             const p = state.players[state.currentPlayerIndex];
@@ -1957,8 +2496,80 @@
 
             const happinessEl = document.getElementById('turn-happiness');
             const healthEl = document.getElementById('turn-health');
+            const zundaTextEl = document.getElementById('turn-zunda-text');
                 if (happinessEl) happinessEl.innerText = `♪:${p.happiness}/${CONFIG.MAX_HAPPINESS}`;
                 if (healthEl) healthEl.innerText = `💪:${p.health}/${CONFIG.MAX_HEALTH}`;
+                if (zundaTextEl) zundaTextEl.innerText = `餅:${p.zundaCards}/${ZUNDA_CARD_LIMIT}`;
+            updateSpecialActionButtons(p);
+            renderHandPanel();
+        }
+
+        function giveZundaCard() {
+            if (state.isGameEnded) return;
+            const player = state.players[state.currentPlayerIndex];
+            if (!player || player.zundaCards <= 0) return;
+            const targets = state.players.filter((p) => p.id !== player.id && !p.finished);
+            if (targets.length === 0) return;
+            const candidates = targets.map((p) => `${p.id + 1}:${p.name}`).join(', ');
+            const input = window.prompt(`渡す相手の番号を入力してください (${candidates})`);
+            if (input === null) return;
+            const targetNo = parseInt(input, 10);
+            const target = targets.find((p) => p.id + 1 === targetNo);
+            if (!target) {
+                window.alert('対象が見つからないのだ。');
+                return;
+            }
+            player.zundaCards -= 1;
+            target.zundaCards = Math.min(ZUNDA_CARD_LIMIT, target.zundaCards + 1);
+            addLog(`${player.name} は ${target.name} にずんだ餅カードを渡したのだ。`, player.id);
+            updateTurnUI();
+        }
+
+        function forgetHandCard(cardIndex) {
+            if (state.isGameEnded) return;
+            const player = state.players[state.currentPlayerIndex];
+            if (!player) return;
+            if (Number.isNaN(cardIndex) || cardIndex < 0 || cardIndex >= player.hand.length) return;
+            const [discarded] = player.hand.splice(cardIndex, 1);
+            removeCardFromDiary(player.id, discarded);
+            addLog(`${player.name} は「忘れる」で ${discarded.no || discarded.type} を捨てたのだ。`, player.id);
+            resolveHandLimitIfReady(player);
+            updateTurnUI();
+        }
+
+        function applyNullifyFromHand(cardIndex) {
+            if (state.isGameEnded) return;
+            const player = state.players[state.currentPlayerIndex];
+            if (!player) return;
+            if (player.happiness !== CONFIG.MIN_VALUE) return;
+            if (state.pendingHandLimitPlayerId === player.id) return;
+            if (Number.isNaN(cardIndex) || cardIndex < 0 || cardIndex >= player.hand.length) return;
+            const [discarded] = player.hand.splice(cardIndex, 1);
+            removeCardFromDiary(player.id, discarded);
+            const recover = Math.abs(discarded.happiness || 0);
+            player.happiness = clampValue(player.happiness + recover, CONFIG.MIN_VALUE, CONFIG.MAX_HAPPINESS);
+            addLog(`${player.name} は「無かったことにする」で幸福度を ${recover} 回復。`, player.id);
+            if (state.pendingNullifyChoicePlayerId === player.id) {
+                endTurn();
+                return;
+            }
+            updateTurnUI();
+        }
+
+        function useNullifySkill() {
+            if (state.pendingNullifyChoicePlayerId === state.currentPlayerIndex) {
+                setActionHint('手札パネルの「無かった」ボタンで使えます。使わないなら「捨てずに終了」を押してください。');
+                return;
+            }
+            setActionHint('このタイミングでは使えないのだ。');
+        }
+
+        function skipNullifyChoice() {
+            const player = state.players[state.currentPlayerIndex];
+            if (!player) return;
+            if (state.pendingNullifyChoicePlayerId !== player.id) return;
+            addLog(`${player.name} は「無かったことにする」を使わずにターン終了。`, player.id);
+            endTurn();
         }
 
         // ==========================================
@@ -1980,6 +2591,26 @@
                 else btn.classList.remove('active');
             });
             renderDiary();
+        }
+
+        function removeCardFromDiary(playerId, targetCard) {
+            if (!targetCard) return;
+            const targetNo = String(targetCard.no || '');
+            const targetType = String(targetCard.type || '');
+            const targetText = String(targetCard.text || '');
+            const logIndex = state.logs.findIndex((log) => {
+                if (!log || !log.cardData) return false;
+                if (log.playerIndex !== playerId) return false;
+                if (log.cardData === targetCard) return true;
+                const sameNo = String(log.cardData.no || '') === targetNo;
+                const sameType = String(log.cardData.type || '') === targetType;
+                const sameText = String(log.cardData.text || '') === targetText;
+                return sameNo && sameType && sameText;
+            });
+            if (logIndex >= 0) {
+                state.logs.splice(logIndex, 1);
+                renderDiary();
+            }
         }
 
         function renderDiary() {
@@ -2043,45 +2674,55 @@
                 badge.style.backgroundColor = '#5D9B0E'; badge.style.color = 'white';
             }
 
-            document.getElementById('modal-text').innerText = card.text;
-            
+            document.getElementById('modal-text').innerText = options.overrideText || card.text;
+
+            const statsBase = options.statsOverride || {
+                happiness: card.happiness || 0,
+                health: card.health || 0,
+                move: card.move || 0
+            };
+
             let statsHtml = '';
-            if (card.happiness !== 0) {
-                const cls = card.happiness > 0 ? 'plus' : '';
-                const sign = card.happiness > 0 ? '+' : '';
-                statsHtml += `<span class="${cls}">幸福 ${sign}${card.happiness}</span>`;
+            if (statsBase.happiness !== 0) {
+                const cls = statsBase.happiness > 0 ? 'plus' : '';
+                const sign = statsBase.happiness > 0 ? '+' : '';
+                statsHtml += `<span class="${cls}">幸福 ${sign}${statsBase.happiness}</span>`;
             }
-            if (card.health !== 0) {
-                const cls = card.health > 0 ? 'plus' : '';
-                const sign = card.health > 0 ? '+' : '';
-                statsHtml += `<span class="${cls}">体調 ${sign}${card.health}</span>`;
+            if (statsBase.health !== 0) {
+                const cls = statsBase.health > 0 ? 'plus' : '';
+                const sign = statsBase.health > 0 ? '+' : '';
+                statsHtml += `<span class="${cls}">体調 ${sign}${statsBase.health}</span>`;
             }
-            if (card.move !== 0) statsHtml += `<span style="color:#333;">移動 ${card.move}</span>`;
+            if (statsBase.move !== 0) statsHtml += `<span style="color:#333;">移動 ${statsBase.move}</span>`;
             if (statsHtml === '') statsHtml = '<span>変化なし</span>';
             
             document.getElementById('modal-stats').innerHTML = statsHtml;
 
-            const modal = document.querySelector('.card-modal');
-            let cardImg = document.getElementById('modal-card-image');
-            if (!cardImg) {
-                cardImg = document.createElement('img');
-                cardImg.id = 'modal-card-image';
-                cardImg.alt = 'カード画像';
-                cardImg.style.width = '100%';
-                cardImg.style.maxHeight = '260px';
-                cardImg.style.objectFit = 'contain';
-                cardImg.style.borderRadius = '12px';
-                cardImg.style.margin = '10px 0 12px';
-                const textEl = document.getElementById('modal-text');
-                textEl.parentNode.insertBefore(cardImg, textEl);
+            const primaryImg = document.getElementById('modal-card-image-primary');
+            const secondaryImg = document.getElementById('modal-card-image-secondary');
+            if (primaryImg) {
+                const frontPath = getCardFrontPath(card);
+                const fallbackBack = getDeckBackPath(card.type);
+                primaryImg.src = frontPath;
+                primaryImg.onerror = () => {
+                    if (fallbackBack) primaryImg.src = fallbackBack;
+                };
             }
-
-            const frontPath = `${ASSET_PATHS.cardFrontDir}${card.no}front.PNG`;
-            const fallbackBack = ASSET_PATHS.cardBack[card.type] || '';
-            cardImg.src = frontPath;
-            cardImg.onerror = () => {
-                if (fallbackBack) cardImg.src = fallbackBack;
-            };
+            if (secondaryImg) {
+                if (options.secondaryCard) {
+                    secondaryImg.classList.remove('hidden');
+                    const secondCard = options.secondaryCard;
+                    const secondFrontPath = getCardFrontPath(secondCard);
+                    const secondFallback = getDeckBackPath(secondCard.type);
+                    secondaryImg.src = secondFrontPath;
+                    secondaryImg.onerror = () => {
+                        if (secondFallback) secondaryImg.src = secondFallback;
+                    };
+                } else {
+                    secondaryImg.classList.add('hidden');
+                    secondaryImg.src = '';
+                }
+            }
 
             document.getElementById('card-overlay').style.display = 'flex';
         }
