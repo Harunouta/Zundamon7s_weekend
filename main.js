@@ -420,6 +420,24 @@
             cardCsv: 'card-ver2.csv'
         };
 
+        /**
+         * GitHub Pages 等で「ページURLに末尾スラッシュが無い」と相対 fetch が /place-vol1.csv になり失敗する。
+         * main.js と同じディレクトリを基準に解決する。
+         */
+        function resolveAppRelativeUrl(relPath) {
+            const normalized = String(relPath).replace(/^\.\//, '');
+            const scriptEl = document.querySelector('script[src*="main.js"]');
+            const srcAttr = scriptEl ? scriptEl.getAttribute('src') : '';
+            if (srcAttr) {
+                const scriptUrl = new URL(srcAttr, window.location.href);
+                const pathname = scriptUrl.pathname;
+                const lastSlash = pathname.lastIndexOf('/');
+                const basePath = lastSlash >= 0 ? pathname.slice(0, lastSlash + 1) : '/';
+                return new URL(normalized, `${scriptUrl.origin}${basePath}`).href;
+            }
+            return new URL(normalized, window.location.href).href;
+        }
+
         const ASSET_PATHS = {
             logo: 'logo/logo.PNG',
             cardFrontDir: 'card/front/',
@@ -1410,8 +1428,9 @@
         }
 
         function parseCsvText(text) {
+            const cleaned = String(text).replace(/^\ufeff/, '');
             return new Promise((resolve, reject) => {
-                Papa.parse(text, {
+                Papa.parse(cleaned, {
                     header: false,
                     skipEmptyLines: true,
                     complete: results => resolve(results.data),
@@ -1439,8 +1458,8 @@
                 setDefaultLoadStatus('同梱CSVを読み込み中...');
 
                 const [placeRes, cardRes] = await Promise.all([
-                    fetch(DEFAULT_DATA_PATHS.placeCsv, { cache: 'no-store' }),
-                    fetch(DEFAULT_DATA_PATHS.cardCsv, { cache: 'no-store' })
+                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.placeCsv), { cache: 'no-store' }),
+                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.cardCsv), { cache: 'no-store' })
                 ]);
 
                 if (!placeRes.ok || !cardRes.ok) {
