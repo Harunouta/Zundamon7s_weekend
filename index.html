@@ -58,6 +58,16 @@
             <input type="file" id="card-csv" accept=".csv">
         </div>
 
+        <div class="file-input-group">
+            <label for="yaku-elements-csv">3. 役要素データ (tools/card-yaku-elements-ver1.csv)</label>
+            <input type="file" id="yaku-elements-csv" accept=".csv">
+        </div>
+
+        <div class="file-input-group">
+            <label for="yaku-definitions-csv">4. 役定義データ (tools/yaku-definitions-ver1.csv)</label>
+            <input type="file" id="yaku-definitions-csv" accept=".csv">
+        </div>
+
         <button id="load-btn" onclick="processFiles()" disabled>データ読み込み</button>
     </div>
 
@@ -307,6 +317,8 @@
                     <th>プレイヤー</th>
                     <th>幸福度</th>
                     <th>体調</th>
+                    <th>役</th>
+                    <th>合計</th>
                     <th>結果</th>
                 </tr>
             </thead>
