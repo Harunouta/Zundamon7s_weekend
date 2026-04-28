@@ -386,6 +386,7 @@
             pendingDraw: null,
             lastDrawnCard: null,
             lastDrawnCardPending: null,
+            finalRanking: [],
             turnCount: 0,
             pendingHandLimitPlayerId: null,
             pendingHandLimitResolve: null,
@@ -412,13 +413,19 @@
         // ==========================================
         const placeInput = document.getElementById('place-csv');
         const cardInput = document.getElementById('card-csv');
+        const yakuElementInput = document.getElementById('yaku-elements-csv');
+        const yakuDefinitionInput = document.getElementById('yaku-definitions-csv');
         const loadBtn = document.getElementById('load-btn');
         const defaultLoadStatus = document.getElementById('default-load-status');
 
         const DEFAULT_DATA_PATHS = {
             placeCsv: 'place-vol1.csv',
-            cardCsv: 'card-ver2.csv'
+            cardCsv: 'card-ver2.csv',
+            yakuElementsCsv: 'card-yaku-elements-ver1.csv',
+            yakuDefinitionsCsv: 'yaku-definitions-ver1.csv'
         };
+        const YAKU_FALLBACK_NAME = 'noYaku';
+        const DEFAULT_NO_YAKU_SCORE = -5;
 
         /**
          * GitHub Pages 等で「ページURLに末尾スラッシュが無い」と相対 fetch が /place-vol1.csv になり失敗する。
@@ -1104,6 +1111,10 @@
             hintEl.innerText = isPendingLimit
                 ? `上限${HAND_CARD_LIMIT}枚を超えています。忘れるで1枚捨ててください。`
                 : `${player.name} の手札 ${player.hand.length}/${HAND_CARD_LIMIT}`;
+            const yakuHint = buildRealtimeYakuHint(player, isPendingLimit);
+            if (yakuHint) {
+                hintEl.innerText += ` / ${yakuHint}`;
+            }
             if (player.hand.length <= 0) {
                 listEl.innerHTML = '<div class="hand-row"><span class="hand-card-name">手札なし</span></div>';
                 return;
@@ -1409,12 +1420,21 @@
         }
 
         function checkFiles() {
-            if (placeInput.files.length > 0 && cardInput.files.length > 0) {
+            if (
+                placeInput.files.length > 0 &&
+                cardInput.files.length > 0 &&
+                yakuElementInput.files.length > 0 &&
+                yakuDefinitionInput.files.length > 0
+            ) {
                 loadBtn.disabled = false;
+                return;
             }
+            loadBtn.disabled = true;
         }
         placeInput.addEventListener('change', checkFiles);
         cardInput.addEventListener('change', checkFiles);
+        yakuElementInput.addEventListener('change', checkFiles);
+        yakuDefinitionInput.addEventListener('change', checkFiles);
 
         function parseFile(file) {
             return new Promise((resolve, reject) => {
@@ -1442,6 +1462,157 @@
         // 一時保存用変数
         let tempBoardData = [];
         let tempCardData = [];
+        let tempCardYakuElements = {};
+        let tempYakuDefinitions = [];
+
+        function parseTruthyFlag(value) {
+            const normalized = String(value || '').trim().toLowerCase();
+            return normalized === 'true' || normalized === 'ture';
+        }
+
+        function loadYakuRows(elementRows, definitionRows) {
+            const nextElements = {};
+            const nextDefinitions = [];
+
+            if (Array.isArray(elementRows)) {
+                elementRows.slice(1).forEach((row) => {
+                    const cardNo = String(row[0] || '').trim();
+                    const yakuElementName = String(row[1] || '').trim();
+                    if (!cardNo || !yakuElementName) return;
+                    nextElements[cardNo] = {
+                        yakuElementName,
+                        isFixed: parseTruthyFlag(row[2])
+                    };
+                });
+            }
+
+            if (Array.isArray(definitionRows)) {
+                definitionRows.slice(1).forEach((row) => {
+                    const yakuName = String(row[0] || '').trim();
+                    const score = parseInt(row[1], 10);
+                    const conditionText = String(row[2] || '').trim();
+                    if (!yakuName) return;
+                    let conditions = {};
+                    if (conditionText) {
+                        try {
+                            conditions = JSON.parse(conditionText);
+                        } catch (error) {
+                            conditions = {};
+                        }
+                    }
+                    nextDefinitions.push({
+                        yakuName,
+                        score: Number.isFinite(score) ? score : 0,
+                        conditions
+                    });
+                });
+            }
+
+            tempCardYakuElements = nextElements;
+            tempYakuDefinitions = nextDefinitions;
+        }
+
+        function getNoYakuScore() {
+            const noYakuDefinition = tempYakuDefinitions.find((definition) => definition.yakuName === YAKU_FALLBACK_NAME);
+            if (!noYakuDefinition) return DEFAULT_NO_YAKU_SCORE;
+            return Number.isFinite(noYakuDefinition.score) ? noYakuDefinition.score : DEFAULT_NO_YAKU_SCORE;
+        }
+
+        function getCardElementName(card) {
+            if (!card || !card.no) return '';
+            const info = tempCardYakuElements[String(card.no).trim()];
+            return info ? info.yakuElementName : '';
+        }
+
+        function matchesYakuCondition(elementCounts, conditions) {
+            const safeConditions = conditions && typeof conditions === 'object' ? conditions : {};
+            const allOfMin = safeConditions.allOfMin || {};
+            const allOfMax = safeConditions.allOfMax || {};
+            const exact = safeConditions.exact || {};
+
+            const hasConstraint =
+                Object.keys(allOfMin).length > 0 ||
+                Object.keys(allOfMax).length > 0 ||
+                Object.keys(exact).length > 0;
+            if (!hasConstraint) return true;
+
+            const minOk = Object.keys(allOfMin).every((elementName) => {
+                const minimumCount = Number(allOfMin[elementName]) || 0;
+                return (elementCounts[elementName] || 0) >= minimumCount;
+            });
+            if (!minOk) return false;
+
+            const maxOk = Object.keys(allOfMax).every((elementName) => {
+                const maximumCount = Number(allOfMax[elementName]);
+                const normalizedMax = Number.isFinite(maximumCount) ? maximumCount : Number.POSITIVE_INFINITY;
+                return (elementCounts[elementName] || 0) <= normalizedMax;
+            });
+            if (!maxOk) return false;
+
+            return Object.keys(exact).every((elementName) => {
+                const exactCount = Number(exact[elementName]) || 0;
+                return (elementCounts[elementName] || 0) === exactCount;
+            });
+        }
+
+        function evaluateYakuForHand(hand) {
+            const noYakuScore = getNoYakuScore();
+            if (!Array.isArray(hand)) {
+                return { yakuName: YAKU_FALLBACK_NAME, yakuScore: noYakuScore };
+            }
+
+            const elementCounts = {};
+            hand.forEach((card) => {
+                const elementName = getCardElementName(card);
+                if (!elementName) return;
+                elementCounts[elementName] = (elementCounts[elementName] || 0) + 1;
+            });
+
+            let bestYaku = { yakuName: YAKU_FALLBACK_NAME, yakuScore: noYakuScore };
+            tempYakuDefinitions.forEach((definition) => {
+                if (definition.yakuName === YAKU_FALLBACK_NAME) return;
+                if (matchesYakuCondition(elementCounts, definition.conditions) && definition.score > bestYaku.yakuScore) {
+                    bestYaku = { yakuName: definition.yakuName, yakuScore: definition.score };
+                }
+            });
+            return bestYaku;
+        }
+
+        function buildRealtimeYakuHint(player, isPendingLimit) {
+            if (!player) return '';
+            if (!tempYakuDefinitions.length || Object.keys(tempCardYakuElements).length === 0) {
+                return '役CSV未読み込み';
+            }
+            if (isPendingLimit || player.hand.length > HAND_CARD_LIMIT) {
+                return `役計算待ち（${HAND_CARD_LIMIT}枚以下で再開）`;
+            }
+            const yakuResult = evaluateYakuForHand(player.hand);
+            const remain = Math.max(0, HAND_CARD_LIMIT - player.hand.length);
+            const prefix = remain > 0 ? '暫定' : '確定';
+            return `${prefix}役: ${yakuResult.yakuName} (${yakuResult.yakuScore >= 0 ? '+' : ''}${yakuResult.yakuScore}) / あと${remain}枚`;
+        }
+
+        function buildPlayerScoreEntry(player) {
+            const yakuResult = evaluateYakuForHand(player.hand || []);
+            const baseScore = (player.happiness || 0) + (player.health || 0);
+            return {
+                ...player,
+                yakuName: yakuResult.yakuName,
+                yakuScore: yakuResult.yakuScore,
+                totalScore: baseScore + yakuResult.yakuScore
+            };
+        }
+
+        function buildFinalRanking(players) {
+            return [...players]
+                .map((player) => buildPlayerScoreEntry(player))
+                .sort((leftPlayer, rightPlayer) => {
+                    if (rightPlayer.totalScore !== leftPlayer.totalScore) return rightPlayer.totalScore - leftPlayer.totalScore;
+                    if (rightPlayer.happiness !== leftPlayer.happiness) return rightPlayer.happiness - leftPlayer.happiness;
+                    if (rightPlayer.health !== leftPlayer.health) return rightPlayer.health - leftPlayer.health;
+                    return leftPlayer.id - rightPlayer.id;
+                });
+        }
 
         function showSetupScreen() {
             document.getElementById('loader-screen').classList.add('hidden');
@@ -1487,6 +1658,22 @@
                     health: parseInt(row[5]) || 0,
                     move: parseInt(row[6]) || 0
                 })).filter(c => c.type);
+                const [yakuElementRes, yakuDefinitionRes] = await Promise.all([
+                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.yakuElementsCsv), { cache: 'no-store' }),
+                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.yakuDefinitionsCsv), { cache: 'no-store' })
+                ]);
+                if (!yakuElementRes.ok || !yakuDefinitionRes.ok) {
+                    throw new Error(`fetch failed: yakuElements=${yakuElementRes.status}, yakuDefinitions=${yakuDefinitionRes.status}`);
+                }
+                const [yakuElementText, yakuDefinitionText] = await Promise.all([
+                    yakuElementRes.text(),
+                    yakuDefinitionRes.text()
+                ]);
+                const [yakuElementRows, yakuDefinitionRows] = await Promise.all([
+                    parseCsvText(yakuElementText),
+                    parseCsvText(yakuDefinitionText)
+                ]);
+                loadYakuRows(yakuElementRows, yakuDefinitionRows);
 
                 if (!syncBoardTrackRowsToBoxAnchors(tempBoardData)) {
                     applyBoardTrackAnchorsForCellCount(tempBoardData.length);
@@ -1501,7 +1688,7 @@
                 setDefaultLoadStatus(loadOkMsg);
                 showSetupScreen();
             } catch (e) {
-                setDefaultLoadStatus('自動読み込みに失敗。下のファイル選択で読み込めます。');
+                setDefaultLoadStatus('自動読み込みに失敗。下の4つのCSV（マス/カード/役要素/役定義）を選択して読み込んでください。');
             }
         }
 
@@ -1528,6 +1715,9 @@
                     health: parseInt(row[5]) || 0,
                     move: parseInt(row[6]) || 0
                 })).filter(c => c.type);
+                const yakuElementData = await parseFile(yakuElementInput.files[0]);
+                const yakuDefinitionData = await parseFile(yakuDefinitionInput.files[0]);
+                loadYakuRows(yakuElementData, yakuDefinitionData);
 
                 showSetupScreen();
 
@@ -1967,6 +2157,7 @@
             state.pendingHandLimitPlayerId = null;
             state.pendingHandLimitResolve = null;
             state.pendingNullifyChoicePlayerId = null;
+            state.finalRanking = [];
             state.turnCount = 1;
 
             const selectedIcons = getPlayerIconSelections();
@@ -2075,17 +2266,11 @@
         }
 
         function finishGameAll() {
-            const sorted = [...state.players].sort((a, b) => {
-                const aSum = a.happiness + a.health;
-                const bSum = b.happiness + b.health;
-                if (bSum !== aSum) return bSum - aSum;
-                if (b.happiness !== a.happiness) return b.happiness - a.happiness;
-                if (b.health !== a.health) return b.health - a.health;
-                return a.id - b.id;
-            });
+            const sorted = buildFinalRanking(state.players);
+            state.finalRanking = sorted;
             const winner = sorted[0] || null;
             if (!winner) return;
-            finishGame(winner);
+            finishGame(state.players[winner.id] || winner);
         }
 
         function rollDice() {
@@ -2756,18 +2941,24 @@
 
         function showWinnerScreen() {
             const screen = document.getElementById('winner-screen');
-            document.getElementById('winner-announce').innerText = `${state.winner.name} の勝ち！`;
+            const ranking = state.finalRanking && state.finalRanking.length > 0
+                ? state.finalRanking
+                : buildFinalRanking(state.players);
+            const topPlayer = ranking[0] || state.winner;
+            document.getElementById('winner-announce').innerText = `${topPlayer.name} の勝ち！`;
             
             const tbody = document.getElementById('result-table');
             let html = '';
-            state.players.forEach(p => {
-                const isWinner = (p.id === state.winner.id);
+            ranking.forEach((playerScore, index) => {
+                const isWinner = index === 0;
                 html += `
                     <tr style="${isWinner ? 'background:#e6ffe6; font-weight:bold;' : ''}">
-                        <td>${p.name}</td>
-                        <td>${p.happiness}</td>
-                        <td>${p.health}</td>
-                        <td>${isWinner ? '1位' : '-'}</td>
+                        <td>${playerScore.name}</td>
+                        <td>${playerScore.happiness}</td>
+                        <td>${playerScore.health}</td>
+                        <td>${playerScore.yakuName} (${playerScore.yakuScore >= 0 ? '+' : ''}${playerScore.yakuScore})</td>
+                        <td>${playerScore.totalScore}</td>
+                        <td>${index + 1}位</td>
                     </tr>
                 `;
             });
