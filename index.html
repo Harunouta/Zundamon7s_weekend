@@ -103,10 +103,10 @@
                 </div>
                 <div class="dice-action-slot">
                     <button id="roll-btn" onclick="rollDice()">サイコロを振る</button>
-                    <button id="use-zunda-btn" onclick="useZundaCard()" style="display:none;">ずんだ餅を使う</button>
-                    <button id="give-zunda-btn" onclick="giveZundaCard()" style="display:none;">ずんだ餅を渡す</button>
-                    <button id="nullify-btn" onclick="useNullifySkill()" style="display:none;">無かったことにする</button>
-                    <button id="skip-nullify-btn" onclick="skipNullifyChoice()" style="display:none;">捨てずに終了</button>
+                    <button type="button" id="use-zunda-btn" class="optional-dice-action-btn" onclick="useZundaCard()">ずんだ餅を使う</button>
+                    <button type="button" id="give-zunda-btn" class="optional-dice-action-btn" onclick="giveZundaCard()">ずんだ餅を渡す</button>
+                    <button type="button" id="nullify-btn" class="optional-dice-action-btn" onclick="useNullifySkill()">無かったことにする</button>
+                    <button type="button" id="skip-nullify-btn" class="optional-dice-action-btn" onclick="skipNullifyChoice()">捨てずに終了</button>
                     <button id="show-result-btn" onclick="showWinnerScreen()">結果発表を見る</button>
                 </div>
                 <div id="action-hint">準備中...</div>
