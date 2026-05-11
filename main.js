@@ -11,7 +11,7 @@
         const ZUNDA_CARD_LIMIT = 3;
         const HAND_CARD_LIMIT = 5;
         const MAX_YAKU_BANNER_SLOTS = 2;
-        const YAKU_BANNER_REL_DIR = 'logo/';
+        const YAKU_BANNER_REL_DIR = 'logo/役/バナー/';
         const ZUNDA_RECOVERY_HEALTH = 5;
         const BONUS_VOICE_DELAY_MS = 1400;
 
@@ -398,6 +398,35 @@
         /** Avoid redundant DOM rebuilds (fewer image re-fetches on GitHub Pages). */
         let lastHandPanelRenderKey = '';
         let lastYakuBannerRenderKey = '';
+
+        /** Batch board + turn UI into one rAF (fewer layout passes; easier on GitHub Pages). */
+        let gameLayoutFrameRaf = null;
+        const gameLayoutDirty = { board: false, turnUi: false };
+
+        function markGameLayoutDirty(parts) {
+            if (parts.board) gameLayoutDirty.board = true;
+            if (parts.turnUi) gameLayoutDirty.turnUi = true;
+            if (gameLayoutFrameRaf != null) return;
+            gameLayoutFrameRaf = requestAnimationFrame(() => {
+                gameLayoutFrameRaf = null;
+                if (gameLayoutDirty.board) {
+                    if (state.players && state.players.length > 0) renderBoard();
+                    gameLayoutDirty.board = false;
+                }
+                if (gameLayoutDirty.turnUi) {
+                    updateTurnUI();
+                    gameLayoutDirty.turnUi = false;
+                }
+            });
+        }
+
+        function scheduleRenderBoard() {
+            markGameLayoutDirty({ board: true });
+        }
+
+        function scheduleUpdateTurnUI() {
+            markGameLayoutDirty({ turnUi: true });
+        }
 
         // ==========================================
         // デバッグログ記録関数
@@ -951,7 +980,7 @@
                 img.src = '';
                 return;
             }
-            
+
             box.classList.remove('during-draw-anim');
             box.classList.remove('empty');
             box.classList.remove('hidden');
@@ -983,15 +1012,27 @@
                 giveBtn.style.display = 'none';
                 nullifyBtn.style.display = 'none';
                 skipNullifyBtn.style.display = 'none';
+                useBtn.classList.remove('is-action-visible');
+                giveBtn.classList.remove('is-action-visible');
+                nullifyBtn.classList.remove('is-action-visible');
+                skipNullifyBtn.classList.remove('is-action-visible');
                 return;
             }
+            useBtn.style.display = 'block';
+            giveBtn.style.display = 'block';
+            nullifyBtn.style.display = 'block';
+            skipNullifyBtn.style.display = 'block';
             const canUse = player.zundaCards > 0;
             const canGive = player.zundaCards > 0 && state.players.some((p) => p.id !== player.id && !p.finished);
             const pendingNullify = state.pendingNullifyChoicePlayerId === player.id;
-            useBtn.style.display = canUse ? 'block' : 'none';
-            giveBtn.style.display = canGive ? 'block' : 'none';
-            nullifyBtn.style.display = pendingNullify ? 'block' : 'none';
-            skipNullifyBtn.style.display = pendingNullify ? 'block' : 'none';
+            useBtn.classList.toggle('is-action-visible', canUse);
+            useBtn.disabled = !canUse;
+            giveBtn.classList.toggle('is-action-visible', canGive);
+            giveBtn.disabled = !canGive;
+            nullifyBtn.classList.toggle('is-action-visible', pendingNullify);
+            nullifyBtn.disabled = !pendingNullify;
+            skipNullifyBtn.classList.toggle('is-action-visible', pendingNullify);
+            skipNullifyBtn.disabled = !pendingNullify;
         }
 
         function setStepButtonVisible(visible) {
@@ -1033,7 +1074,7 @@
             };
         }
 
-        function grantZundaCard(player, reasonText) {
+        function grantZundaCard(player, reasonText, grantOptions = {}) {
             if (!player) return false;
             if (player.zundaCards >= ZUNDA_CARD_LIMIT) return false;
             if (player.lastZundaGrantTurn === state.turnCount) return false;
@@ -1042,7 +1083,9 @@
             const zundaCard = createZundaCard();
             state.lastDrawnCardPending = zundaCard;
             state.lastDrawnCard = zundaCard;
-            updateLastDrawnCardUi();
+            if (!grantOptions.skipLastDrawnUi) {
+                updateLastDrawnCardUi();
+            }
             addLog(`${player.name} は ずんだ餅カードを獲得（${reasonText}）`, player.id);
             return true;
         }
@@ -1050,7 +1093,7 @@
         function tryGrantZundaAtTurnStart(player) {
             if (!player) return;
             if (player.happiness !== CONFIG.MAX_HAPPINESS) return;
-            const granted = grantZundaCard(player, '幸福度MAX維持');
+            const granted = grantZundaCard(player, '幸福度MAX維持', { skipLastDrawnUi: true });
             if (granted) {
                 setActionHint(`幸福度MAX効果で ${player.name} に ずんだ餅カードが生成されたのだ。`);
             }
@@ -1133,7 +1176,6 @@
             return card.no || card.type || 'CARD';
         }
 
-
         function renderYakuBanners() {
             const rowEl = document.getElementById('yaku-banner-row');
             if (!rowEl) return;
@@ -1166,7 +1208,7 @@
                 return;
             }
             const bannerKey = `${player.id}|${isPendingLimit}|${entries.map((e) => e.yakuName).join(',')}`;
-            if (bannerKey === lastYakuBannerRenderKey && rowEl.childElementCount === entries.length) {                
+            if (bannerKey === lastYakuBannerRenderKey && rowEl.childElementCount === entries.length) {
                 return;
             }
             lastYakuBannerRenderKey = bannerKey;
@@ -1176,6 +1218,7 @@
                 return `<div class="yaku-banner-slot"><img class="yaku-banner-img" src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" loading="lazy" decoding="async"></div>`;
             }).join('');
         }
+
         function buildHandPanelRenderKey(player) {
             if (!player) return '';
             const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
@@ -1206,7 +1249,7 @@
                 hintEl.innerText += ` / ${yakuHint}`;
             }
 
-             const renderKey = buildHandPanelRenderKey(player);
+            const renderKey = buildHandPanelRenderKey(player);
             if (renderKey === lastHandPanelRenderKey) {
                 if (player.hand.length <= 0) {
                     if (listEl.querySelector('.hand-row-empty')) {
@@ -1218,7 +1261,8 @@
                     return;
                 }
             }
-            lastHandPanelRenderKey = renderKey;               
+            lastHandPanelRenderKey = renderKey;
+
             if (player.hand.length <= 0) {
                 listEl.innerHTML = '<div class="hand-row hand-row-empty"><span class="hand-card-name">手札なし</span></div>';
                 renderYakuBanners();
@@ -1246,7 +1290,7 @@
             state.pendingNullifyChoicePlayerId = player.id;
             state.isProcessing = false;
             setActionHint('幸福度0です。手札から「無かった」を使うか、「捨てずに終了」を選んでください。');
-            updateTurnUI();
+            scheduleUpdateTurnUI();
         }
 
         function clearNullifyChoice() {
@@ -1304,7 +1348,7 @@
 
             player.position += pm.direction;
             pm.remainingSteps -= 1;
-            renderBoard();
+            scheduleRenderBoard();
             updatePendingMoveHint();
             updateStepButtonLabel();
 
@@ -1334,8 +1378,7 @@
             if (player.position === maxPos) {
                 player.finished = true;
                 recordDebug("PLAYER_FINISH", player.id, { position: player.position });
-                renderBoard();
-                updateTurnUI();
+                markGameLayoutDirty({ board: true, turnUi: true });
 
                 if (areAllPlayersFinished()) {
                     playSe('finish');
@@ -1379,7 +1422,9 @@
                 if (onDone) onDone();
                 return;
             }
-           setLastDrawnSlotDrawAnimSuppressed(true);
+
+            setLastDrawnSlotDrawAnimSuppressed(true);
+
             const from = deckEl.getBoundingClientRect();
             const backRatio = deckImageAspectRatios[deckType];
             const portraitRatio = getPortraitRatio(backRatio);
@@ -1933,7 +1978,7 @@
                 boardContainer.classList.remove('board-bg-error');
                 applyBoardImageLayout();
                 const scheduleDecodeRender = () => {
-                    if (state.players && state.players.length > 0) renderBoard();
+                    if (state.players && state.players.length > 0) scheduleRenderBoard();
                 };
                 if (typeof boardBg.decode === 'function') {
                     boardBg.decode().then(scheduleDecodeRender).catch(scheduleDecodeRender);
@@ -1949,7 +1994,7 @@
             if (boardBg.complete && boardBg.naturalWidth > 0) {
                 applyBoardImageLayout();
                 const scheduleDecodeRender = () => {
-                    if (state.players && state.players.length > 0) renderBoard();
+                    if (state.players && state.players.length > 0) scheduleRenderBoard();
                 };
                 if (typeof boardBg.decode === 'function') {
                     boardBg.decode().then(scheduleDecodeRender).catch(scheduleDecodeRender);
@@ -1989,29 +2034,19 @@
             if (typeof ResizeObserver === 'undefined') {
                 if (!boardResizeFallbackAttached) {
                     boardResizeFallbackAttached = true;
-                    window.addEventListener('resize', scheduleRenderBoardForResize);
+                    window.addEventListener('resize', scheduleRenderBoard);
                     if (window.visualViewport) {
-                        window.visualViewport.addEventListener('resize', scheduleRenderBoardForResize);
+                        window.visualViewport.addEventListener('resize', scheduleRenderBoard);
                     }
                 }
                 return;
             }
             if (boardContainerResizeObserver) return;
-            boardContainerResizeObserver = new ResizeObserver(() => scheduleRenderBoardForResize());
+            boardContainerResizeObserver = new ResizeObserver(() => scheduleRenderBoard());
             boardContainerResizeObserver.observe(boardContainer);
             if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', scheduleRenderBoardForResize);
+                window.visualViewport.addEventListener('resize', scheduleRenderBoard);
             }
-        }
-
-        let resizeRenderBoardPending = false;
-        function scheduleRenderBoardForResize() {
-            if (resizeRenderBoardPending) return;
-            resizeRenderBoardPending = true;
-            requestAnimationFrame(() => {
-                resizeRenderBoardPending = false;
-                if (state.players && state.players.length > 0) renderBoard();
-            });
         }
 
         const rotateHintCoarsePointerMql = window.matchMedia('(pointer: coarse)');
@@ -2062,7 +2097,7 @@
             updateUiLayoutToggleButton();
             updateRotateHintOverlay();
             if (state.players && state.players.length > 0) {
-                scheduleRenderBoardForResize();
+                scheduleRenderBoard();
             }
         }
 
@@ -2383,6 +2418,7 @@
 
             state.currentPlayerIndex = 0;
             tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
+            updateLastDrawnCardUi();
             updateTurnUI();
             pendingGameStartTurnSeTimeoutId = setTimeout(() => {
                 pendingGameStartTurnSeTimeoutId = null;
@@ -2543,9 +2579,6 @@
                 endTurn();
                 return;
             }
-            if (player.health > CONFIG.MIN_VALUE) {
-                updateTurnUI();
-            }
             if (type === 'W' && player.happiness === CONFIG.MIN_VALUE) {
                 addLog(`${player.name} は幸福度0で WAKUWAKU を引けないのだ。`, player.id);
                 beginNullifyChoice(player);
@@ -2557,6 +2590,9 @@
                 return;
             }
 
+            if (player.health > CONFIG.MIN_VALUE) {
+                scheduleUpdateTurnUI();
+            }
             if (type === 'W') beginDrawByClick('WAKUWAKU', player);
             else if (type === 'D') beginDrawByClick('DOKIDOKI', player);
             else if (type === 'C') beginDrawByClick('CharactorCard', player);
@@ -2593,6 +2629,7 @@
             if (!triggerHealthBonus) {
                 applyCardEffects(player, [card]);
             }
+
             requestAnimationFrame(() => {
                 renderBoard();
                 updateTurnUI();
@@ -2606,29 +2643,30 @@
                         const startBonusFlow = () => drawHealthMaxBonusCard(player, card);
                         if (needsForget) {
                             beginHandLimitResolution(player, startBonusFlow);
-                    } else {
-                        startBonusFlow();
-                    }
-                    return;
-                }
-                showModal(card, () => {
-                    const continueCurrentCard = () => {
-                        if (card.move !== 0) {
-                            addLog(`効果で ${card.move} マス移動`, player.id);
-                            movePlayer(state.currentPlayerIndex, card.move, 'card');
                         } else {
-                            endTurn();
+                            startBonusFlow();
                         }
-                    };
-                    if (needsForget) {
-                        beginHandLimitResolution(player, () => {
-                            continueCurrentCard();
-                        });
                         return;
                     }
-                    continueCurrentCard();
-                }, { skipCardVoice: true });
-                queuePlayCardVoiceAfterCardDrawSe(card);
+                    showModal(card, () => {
+                        const continueCurrentCard = () => {
+                            if (card.move !== 0) {
+                                addLog(`効果で ${card.move} マス移動`, player.id);
+                                movePlayer(state.currentPlayerIndex, card.move, 'card');
+                            } else {
+                                endTurn();
+                            }
+                        };
+                        if (needsForget) {
+                            beginHandLimitResolution(player, () => {
+                                continueCurrentCard();
+                            });
+                            return;
+                        }
+                        continueCurrentCard();
+                    }, { skipCardVoice: true });
+                    queuePlayCardVoiceAfterCardDrawSe(card);
+                });
             });
         }
 
@@ -2651,6 +2689,7 @@
             state.currentPlayerIndex = getNextPlayerIndex();
             state.turnCount += 1;
             tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
+            updateLastDrawnCardUi();
             updateTurnUI();
             setActionHint('サイコロを振ってください。');
             document.getElementById('roll-btn').disabled = false;
@@ -2847,7 +2886,11 @@
 
             const iconEl = document.getElementById('current-player-icon');
             if (iconEl) {
-                iconEl.src = p.iconPath || '';
+                const nextIconSrc = p.iconPath || '';
+                if (iconEl.dataset.appliedIconSrc !== nextIconSrc) {
+                    iconEl.src = nextIconSrc;
+                    iconEl.dataset.appliedIconSrc = nextIconSrc;
+                }
                 iconEl.style.outline = `3px solid ${p.color}`;
                 iconEl.style.outlineOffset = '2px';
             }
@@ -2870,7 +2913,7 @@
             player.health = Math.min(CONFIG.MAX_HEALTH, player.health + ZUNDA_RECOVERY_HEALTH);
             addLog(`${player.name} は ずんだ餅を食べて体調を ${ZUNDA_RECOVERY_HEALTH} 回復。`, player.id);
             setActionHint(`${player.name} は ずんだ餅を食べて体調が回復したのだ。`);
-            updateTurnUI();
+            scheduleUpdateTurnUI();
         }
 
         function giveZundaCard() {
@@ -2895,7 +2938,7 @@
             target.zundaCards = Math.min(ZUNDA_CARD_LIMIT, target.zundaCards + 1);
             addLog(`${player.name} は ${target.name} にずんだ餅カードを渡したのだ。`, player.id);
             setActionHint(`${player.name} は ${target.name} にずんだ餅を渡したのだ。`);
-            updateTurnUI();
+            scheduleUpdateTurnUI();
         }
 
         function forgetHandCard(cardIndex) {
@@ -2907,7 +2950,7 @@
             removeCardFromDiary(player.id, discarded);
             addLog(`${player.name} は「忘れる」で ${discarded.no || discarded.type} を捨てたのだ。`, player.id);
             resolveHandLimitIfReady(player);
-            updateTurnUI();
+            scheduleUpdateTurnUI();
         }
 
         function applyNullifyFromHand(cardIndex) {
@@ -2926,7 +2969,7 @@
                 endTurn();
                 return;
             }
-            updateTurnUI();
+            scheduleUpdateTurnUI();
         }
 
         function useNullifySkill() {
@@ -3019,13 +3062,16 @@
             const container = document.getElementById('diary-list');
             if (!container) return;
             container.innerHTML = '';
-            
+
             const filteredLogs = state.logs.filter(l => {
                 if (!l.cardData) return false;
                 if (state.currentTab === -1) return true;
                 return l.playerIndex === state.currentTab;
             });
-        });
+
+            [...filteredLogs].reverse().forEach((log) => {
+                container.appendChild(createDiaryCardEntryElement(log));
+            });
         }
 
         // ==========================================
