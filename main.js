@@ -10,6 +10,8 @@
         };
         const ZUNDA_CARD_LIMIT = 3;
         const HAND_CARD_LIMIT = 5;
+        const MAX_YAKU_BANNER_SLOTS = 2;
+        const YAKU_BANNER_REL_DIR = 'logo/役/バナー/';
         const ZUNDA_RECOVERY_HEALTH = 5;
         const BONUS_VOICE_DELAY_MS = 1400;
 
@@ -426,6 +428,24 @@
         };
         const YAKU_FALLBACK_NAME = 'noYaku';
         const DEFAULT_NO_YAKU_SCORE = -5;
+
+        function escapeHtmlAttr(raw) {
+            return String(raw)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+
+        function escapeHtmlText(raw) {
+            return String(raw)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function getYakuBannerSrc(yakuName) {
+            return `${YAKU_BANNER_REL_DIR}${String(yakuName || '').trim()}.PNG`;
+        }
 
         /**
          * GitHub Pages 等で「ページURLに末尾スラッシュが無い」と相対 fetch が /place-vol1.csv になり失敗する。
@@ -940,18 +960,22 @@
         }
 
         function updateSpecialActionButtons(player) {
+            const useBtn = document.getElementById('use-zunda-btn');
             const giveBtn = document.getElementById('give-zunda-btn');
             const nullifyBtn = document.getElementById('nullify-btn');
             const skipNullifyBtn = document.getElementById('skip-nullify-btn');
-            if (!giveBtn || !nullifyBtn || !skipNullifyBtn) return;
+            if (!useBtn || !giveBtn || !nullifyBtn || !skipNullifyBtn) return;
             if (!player || state.isGameEnded) {
+                useBtn.style.display = 'none';
                 giveBtn.style.display = 'none';
                 nullifyBtn.style.display = 'none';
                 skipNullifyBtn.style.display = 'none';
                 return;
             }
+            const canUse = player.zundaCards > 0;
             const canGive = player.zundaCards > 0 && state.players.some((p) => p.id !== player.id && !p.finished);
             const pendingNullify = state.pendingNullifyChoicePlayerId === player.id;
+            useBtn.style.display = canUse ? 'block' : 'none';
             giveBtn.style.display = canGive ? 'block' : 'none';
             nullifyBtn.style.display = pendingNullify ? 'block' : 'none';
             skipNullifyBtn.style.display = pendingNullify ? 'block' : 'none';
@@ -1096,6 +1120,42 @@
             return card.no || card.type || 'CARD';
         }
 
+
+        function renderYakuBanners() {
+            const rowEl = document.getElementById('yaku-banner-row');
+            if (!rowEl) return;
+            if (state.isGameEnded) {
+                rowEl.innerHTML = '';
+                return;
+            }
+            const player = state.players[state.currentPlayerIndex];
+            if (!player) {
+                rowEl.innerHTML = '';
+                return;
+            }
+            const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
+            if (
+                isPendingLimit ||
+                player.hand.length > HAND_CARD_LIMIT ||
+                !tempYakuDefinitions.length ||
+                Object.keys(tempCardYakuElements).length === 0
+            ) {
+                rowEl.innerHTML = '';
+                return;
+            }
+            const entries = findMatchingYakuBannerEntries(player.hand);
+            if (entries.length <= 0) {
+                rowEl.innerHTML = '';
+                return;
+            }
+            rowEl.innerHTML = entries.map((entry) => {
+                const src = getYakuBannerSrc(entry.yakuName);
+                const alt = entry.yakuName;
+                return `<div class="yaku-banner-slot"><img class="yaku-banner-img" src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" loading="lazy" decoding="async"></div>`;
+            }).join('');
+        }
+
+
         function renderHandPanel() {
             const listEl = document.getElementById('hand-list');
             const hintEl = document.getElementById('hand-panel-hint');
@@ -1122,7 +1182,13 @@
             listEl.innerHTML = player.hand.map((card, index) => {
                 const forgetDisabled = (!isPendingLimit) ? 'disabled' : '';
                 const nullifyDisabled = (!canNullify || isPendingLimit) ? 'disabled' : '';
+                const frontSrc = escapeHtmlAttr(getCardFrontPath(card));
+                const fallbackSrc = escapeHtmlAttr(getDeckBackPath(card.type));
+                const label = escapeHtmlAttr(getHandCardLabel(card));
                 return `<div class="hand-row">
+                    <div class="hand-card-thumb-wrap">
+                        <img class="hand-card-thumb" src="${frontSrc}" alt="${label}" data-fallback-src="${fallbackSrc}" loading="lazy" decoding="async" onerror="if(this.dataset.fallbackSrc){this.onerror=null;this.src=this.dataset.fallbackSrc;}">
+                    </div>
                     <span class="hand-card-name">${index + 1}. ${getHandCardLabel(card)}</span>
                     <button type="button" onclick="forgetHandCard(${index})" ${forgetDisabled}>忘れる</button>
                     <button type="button" class="nullify-btn" onclick="applyNullifyFromHand(${index})" ${nullifyDisabled}>無かった</button>
@@ -1555,18 +1621,45 @@
             });
         }
 
+        function getHandYakuElementCounts(hand) {
+            const elementCounts = {};
+            if (!Array.isArray(hand)) return elementCounts;
+            hand.forEach((card) => {
+                const elementName = getCardElementName(card);
+                if (!elementName) return;
+                elementCounts[elementName] = (elementCounts[elementName] || 0) + 1;
+            });
+            return elementCounts;
+        }
+
+        function findMatchingYakuBannerEntries(hand) {
+            if (!Array.isArray(hand)) return [];
+            const elementCounts = getHandYakuElementCounts(hand);
+            const matches = [];
+            tempYakuDefinitions.forEach((definition) => {
+                if (definition.yakuName === YAKU_FALLBACK_NAME) return;
+                if (!matchesYakuCondition(elementCounts, definition.conditions)) return;
+                matches.push({ yakuName: definition.yakuName, yakuScore: definition.score });
+            });
+            matches.sort((left, right) => right.yakuScore - left.yakuScore);
+            const seenNames = new Set();
+            const deduped = [];
+            for (let i = 0; i < matches.length && deduped.length < MAX_YAKU_BANNER_SLOTS; i++) {
+                const item = matches[i];
+                if (seenNames.has(item.yakuName)) continue;
+                seenNames.add(item.yakuName);
+                deduped.push(item);
+            }
+            return deduped;
+        }
+
         function evaluateYakuForHand(hand) {
             const noYakuScore = getNoYakuScore();
             if (!Array.isArray(hand)) {
                 return { yakuName: YAKU_FALLBACK_NAME, yakuScore: noYakuScore };
             }
 
-            const elementCounts = {};
-            hand.forEach((card) => {
-                const elementName = getCardElementName(card);
-                if (!elementName) return;
-                elementCounts[elementName] = (elementCounts[elementName] || 0) + 1;
-            });
+            const elementCounts = getHandYakuElementCounts(hand);
 
             let bestYaku = { yakuName: YAKU_FALLBACK_NAME, yakuScore: noYakuScore };
             tempYakuDefinitions.forEach((definition) => {
@@ -2708,12 +2801,26 @@
             renderHandPanel();
         }
 
+        function useZundaCard() {
+            if (state.isGameEnded) return;
+            const player = state.players[state.currentPlayerIndex];
+            if (!player || player.zundaCards <= 0) return;
+            player.zundaCards -= 1;
+            player.health = Math.min(CONFIG.MAX_HEALTH, player.health + ZUNDA_RECOVERY_HEALTH);
+            addLog(`${player.name} は ずんだ餅を食べて体調を ${ZUNDA_RECOVERY_HEALTH} 回復。`, player.id);
+            setActionHint(`${player.name} は ずんだ餅を食べて体調が回復したのだ。`);
+            updateTurnUI();
+        }
+
         function giveZundaCard() {
             if (state.isGameEnded) return;
             const player = state.players[state.currentPlayerIndex];
             if (!player || player.zundaCards <= 0) return;
             const targets = state.players.filter((p) => p.id !== player.id && !p.finished);
-            if (targets.length === 0) return;
+            if (targets.length <= 0) {
+                setActionHint('渡せる相手がいないのだ。');
+                return;
+            }
             const candidates = targets.map((p) => `${p.id + 1}:${p.name}`).join(', ');
             const input = window.prompt(`渡す相手の番号を入力してください (${candidates})`);
             if (input === null) return;
@@ -2726,6 +2833,7 @@
             player.zundaCards -= 1;
             target.zundaCards = Math.min(ZUNDA_CARD_LIMIT, target.zundaCards + 1);
             addLog(`${player.name} は ${target.name} にずんだ餅カードを渡したのだ。`, player.id);
+            setActionHint(`${player.name} は ${target.name} にずんだ餅を渡したのだ。`);
             updateTurnUI();
         }
 
@@ -2951,12 +3059,30 @@
             let html = '';
             ranking.forEach((playerScore, index) => {
                 const isWinner = index === 0;
+                const safeYakuName = escapeHtmlText(playerScore.yakuName);
+                const safeYakuAlt = escapeHtmlAttr(playerScore.yakuName);
+                const scoreSign = playerScore.yakuScore >= 0 ? '+' : '';
+                const safeYakuScoreText = escapeHtmlText(`${safeYakuName} (${scoreSign}${playerScore.yakuScore})`);
+                const yakuEntries = findMatchingYakuBannerEntries(playerScore.hand || []);
+                const yakuBannersHtml = yakuEntries.length > 0
+                    ? yakuEntries.map((entry) => {
+                        const entrySrc = getYakuBannerSrc(entry.yakuName);
+                        const safeEntrySrc = escapeHtmlAttr(entrySrc);
+                        const safeEntryAlt = escapeHtmlAttr(entry.yakuName);
+                        return `<img class="result-yaku-banner" src="${safeEntrySrc}" alt="${safeEntryAlt}" loading="lazy" decoding="async">`;
+                    }).join('')
+                    : `<img class="result-yaku-banner" src="${escapeHtmlAttr(getYakuBannerSrc(playerScore.yakuName))}" alt="${safeYakuAlt}" loading="lazy" decoding="async">`;
                 html += `
                     <tr style="${isWinner ? 'background:#e6ffe6; font-weight:bold;' : ''}">
                         <td>${playerScore.name}</td>
                         <td>${playerScore.happiness}</td>
                         <td>${playerScore.health}</td>
-                        <td>${playerScore.yakuName} (${playerScore.yakuScore >= 0 ? '+' : ''}${playerScore.yakuScore})</td>
+                        <td class="result-yaku-cell">
+                            <div class="result-yaku-wrap">
+                                <div class="result-yaku-banners">${yakuBannersHtml}</div>
+                                <div class="result-yaku-text">${safeYakuScoreText}</div>
+                            </div>
+                        </td>
                         <td>${playerScore.totalScore}</td>
                         <td>${index + 1}位</td>
                     </tr>
