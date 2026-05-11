@@ -5,7 +5,8 @@
             --text-color: #333;
             --action-hint-min-height: 2.85rem;
             --step-btn-slot-min-height: 44px;
-            --dice-action-slot-min-height: 96px;
+            /* roll + optional 4 rows (visibility-hidden still occupies space) + gaps */
+            --dice-action-slot-min-height: 248px;
             --board-diary-list-max-height: min(260px, 34vh);
         }
 
@@ -1217,6 +1218,16 @@
         .dice-action-slot button {
             margin-top: 0;
             margin-bottom: 0;
+        }
+        /* Avoid layout jump: keep box size; toggle visibility instead of display:none */
+        .optional-dice-action-btn {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            visibility: hidden;
+        }
+        .optional-dice-action-btn.is-action-visible {
+            visibility: visible;
         }
         #step-btn {
             display: none;
