@@ -103,6 +103,7 @@
                 </div>
                 <div class="dice-action-slot">
                     <button id="roll-btn" onclick="rollDice()">サイコロを振る</button>
+                    <button id="use-zunda-btn" onclick="useZundaCard()" style="display:none;">ずんだ餅を使う</button>
                     <button id="give-zunda-btn" onclick="giveZundaCard()" style="display:none;">ずんだ餅を渡す</button>
                     <button id="nullify-btn" onclick="useNullifySkill()" style="display:none;">無かったことにする</button>
                     <button id="skip-nullify-btn" onclick="skipNullifyChoice()" style="display:none;">捨てずに終了</button>
@@ -132,6 +133,7 @@
                 <div id="hand-panel">
                     <div id="hand-panel-title">手札（上限5）</div>
                     <div id="hand-panel-hint"></div>
+                    <div id="yaku-banner-row" aria-label="成立中の役バナー"></div>
                     <div id="hand-list"></div>
                 </div>
             </div>
