@@ -68,6 +68,25 @@
             <input type="file" id="yaku-definitions-csv" accept=".csv">
         </div>
 
+        <details class="file-input-group" style="margin-top:8px;">
+            <summary>ローカル直開き用（任意）: スプライトをファイル指定</summary>
+            <label for="card-sprite-json">カードスプライトJSON (cards-atlas.json)</label>
+            <input type="file" id="card-sprite-json" accept=".json,application/json">
+            <label for="card-sprite-image">カードスプライト画像 (cards-atlas.png)</label>
+            <input type="file" id="card-sprite-image" accept=".png,image/png">
+            <label for="yaku-sprite-json">役スプライトJSON (Yaku.json)</label>
+            <input type="file" id="yaku-sprite-json" accept=".json,application/json">
+            <label for="yaku-sprite-image">役スプライト画像 (Yaku.PNG)</label>
+            <input type="file" id="yaku-sprite-image" accept=".png,image/png">
+        </details>
+
+        <div class="file-input-group">
+            <label for="special-action-ui-toggle" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" id="special-action-ui-toggle">
+                ずんだ餅操作ボタンを表示する（オフでちらつき抑制）
+            </label>
+        </div>
+
         <button id="load-btn" onclick="processFiles()" disabled>データ読み込み</button>
     </div>
 
@@ -95,11 +114,9 @@
                     </span>
                 </div>
                 <h3 class="turn-line">ターン: <img id="current-player-icon" alt="icon"><span id="current-player-name">Player 1</span></h3>
+                <!-- Intentionally no "last drawn card" preview beside the dice: it caused layout flicker and 404 noise after sprite migration. Do not re-add #last-drawn-card here. -->
                 <div class="dice-row">
                     <div id="dice-display">🎲</div>
-                    <div id="last-drawn-card" class="empty" title="直前に引いたカード">
-                        <img id="last-drawn-card-img" alt="last card">
-                    </div>
                 </div>
                 <div class="dice-action-slot">
                     <button id="roll-btn" onclick="rollDice()">サイコロを振る</button>
