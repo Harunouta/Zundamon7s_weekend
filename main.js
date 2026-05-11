@@ -395,6 +395,10 @@
             pendingNullifyChoicePlayerId: null
         };
 
+        /** Avoid redundant DOM rebuilds (fewer image re-fetches on GitHub Pages). */
+        let lastHandPanelRenderKey = '';
+        let lastYakuBannerRenderKey = '';
+
         // ==========================================
         // デバッグログ記録関数
         // ==========================================
@@ -915,6 +919,13 @@
             return ASSET_PATHS.cardBack[deckType] || '';
         }
 
+        /** Hide sidebar preview during fly/flip so the previous card does not sit beside the anim layer. */
+        function setLastDrawnSlotDrawAnimSuppressed(isSuppressed) {
+            const box = document.getElementById('last-drawn-card');
+            if (!box) return;
+            box.classList.toggle('during-draw-anim', !!isSuppressed);
+        }
+
         function updateDeckUi() {
             const types = ['WAKUWAKU', 'DOKIDOKI', 'CharactorCard'];
             types.forEach(t => {
@@ -933,13 +944,15 @@
 
             const card = state.lastDrawnCard;
             if (!card) {
+                box.classList.remove('during-draw-anim');
                 box.classList.add('empty');
                 box.classList.add('hidden');
                 box.style.aspectRatio = '3 / 4';
                 img.src = '';
                 return;
             }
-
+            
+            box.classList.remove('during-draw-anim');
             box.classList.remove('empty');
             box.classList.remove('hidden');
             img.src = getCardFrontPath(card);
@@ -1126,11 +1139,13 @@
             if (!rowEl) return;
             if (state.isGameEnded) {
                 rowEl.innerHTML = '';
+                lastYakuBannerRenderKey = '';
                 return;
             }
             const player = state.players[state.currentPlayerIndex];
             if (!player) {
                 rowEl.innerHTML = '';
+                lastYakuBannerRenderKey = '';
                 return;
             }
             const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
@@ -1141,20 +1156,33 @@
                 Object.keys(tempCardYakuElements).length === 0
             ) {
                 rowEl.innerHTML = '';
+                lastYakuBannerRenderKey = '';
                 return;
             }
             const entries = findMatchingYakuBannerEntries(player.hand);
             if (entries.length <= 0) {
                 rowEl.innerHTML = '';
+                lastYakuBannerRenderKey = '';
                 return;
             }
+            const bannerKey = `${player.id}|${isPendingLimit}|${entries.map((e) => e.yakuName).join(',')}`;
+            if (bannerKey === lastYakuBannerRenderKey && rowEl.childElementCount === entries.length) {                
+                return;
+            }
+            lastYakuBannerRenderKey = bannerKey;
             rowEl.innerHTML = entries.map((entry) => {
                 const src = getYakuBannerSrc(entry.yakuName);
                 const alt = entry.yakuName;
                 return `<div class="yaku-banner-slot"><img class="yaku-banner-img" src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" loading="lazy" decoding="async"></div>`;
             }).join('');
         }
-
+        function buildHandPanelRenderKey(player) {
+            if (!player) return '';
+            const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
+            const canNullify = player.happiness === CONFIG.MIN_VALUE;
+            const handSig = player.hand.map((c) => `${c.type}:${String(c.no || '').trim()}`).join('|');
+            return `${player.id}\t${isPendingLimit}\t${canNullify}\t${handSig}`;
+        }
 
         function renderHandPanel() {
             const listEl = document.getElementById('hand-list');
@@ -1164,6 +1192,8 @@
             if (!player || state.isGameEnded) {
                 listEl.innerHTML = '';
                 hintEl.innerText = '';
+                lastHandPanelRenderKey = '';
+                renderYakuBanners();
                 return;
             }
             const isPendingLimit = state.pendingHandLimitPlayerId === player.id;
@@ -1175,8 +1205,23 @@
             if (yakuHint) {
                 hintEl.innerText += ` / ${yakuHint}`;
             }
+
+             const renderKey = buildHandPanelRenderKey(player);
+            if (renderKey === lastHandPanelRenderKey) {
+                if (player.hand.length <= 0) {
+                    if (listEl.querySelector('.hand-row-empty')) {
+                        renderYakuBanners();
+                        return;
+                    }
+                } else if (listEl.childElementCount === player.hand.length) {
+                    renderYakuBanners();
+                    return;
+                }
+            }
+            lastHandPanelRenderKey = renderKey;               
             if (player.hand.length <= 0) {
-                listEl.innerHTML = '<div class="hand-row"><span class="hand-card-name">手札なし</span></div>';
+                listEl.innerHTML = '<div class="hand-row hand-row-empty"><span class="hand-card-name">手札なし</span></div>';
+                renderYakuBanners();
                 return;
             }
             listEl.innerHTML = player.hand.map((card, index) => {
@@ -1189,11 +1234,12 @@
                     <div class="hand-card-thumb-wrap">
                         <img class="hand-card-thumb" src="${frontSrc}" alt="${label}" data-fallback-src="${fallbackSrc}" loading="lazy" decoding="async" onerror="if(this.dataset.fallbackSrc){this.onerror=null;this.src=this.dataset.fallbackSrc;}">
                     </div>
-                    <span class="hand-card-name">${index + 1}. ${getHandCardLabel(card)}</span>
+                    <span class="hand-card-name">${escapeHtmlText(`${index + 1}. ${getHandCardLabel(card)}`)}</span>
                     <button type="button" onclick="forgetHandCard(${index})" ${forgetDisabled}>忘れる</button>
                     <button type="button" class="nullify-btn" onclick="applyNullifyFromHand(${index})" ${nullifyDisabled}>無かった</button>
                 </div>`;
             }).join('');
+            renderYakuBanners();
         }
 
         function beginNullifyChoice(player) {
@@ -1333,7 +1379,7 @@
                 if (onDone) onDone();
                 return;
             }
-
+           setLastDrawnSlotDrawAnimSuppressed(true);
             const from = deckEl.getBoundingClientRect();
             const backRatio = deckImageAspectRatios[deckType];
             const portraitRatio = getPortraitRatio(backRatio);
@@ -1370,14 +1416,27 @@
                 cardEl.style.transition = `transform ${DRAW_ANIMATION.flipMs}ms ease`;
                 cardEl.style.transform = 'rotate(0deg) scaleX(0.02)';
                 setTimeout(() => {
-                    // CharactorCardの表は横長だが、演出は縦長のまま見せて、最終表示（モーダル/日記）で横長にする
-                    img.src = getCardFrontPath(card);
-                    playSe('card');
-                    cardEl.style.transform = 'rotate(0deg) scaleX(1)';
-                    setTimeout(() => {
-                        cardEl.remove();
-                        if (onDone) onDone();
-                    }, DRAW_ANIMATION.endHoldMs + DRAW_ANIMATION.flipMs);
+                    const frontPath = getCardFrontPath(card);
+                    const revealFrontFace = () => {
+                        img.src = frontPath;
+                        playSe('card');
+                        cardEl.style.transform = 'rotate(0deg) scaleX(1)';
+                        setTimeout(() => {
+                            cardEl.remove();
+                            if (onDone) onDone();
+                            setLastDrawnSlotDrawAnimSuppressed(false);
+                        }, DRAW_ANIMATION.endHoldMs + DRAW_ANIMATION.flipMs);
+                    };
+                    const warmer = new Image();
+                    warmer.onload = () => {
+                        if (typeof warmer.decode === 'function') {
+                            warmer.decode().then(revealFrontFace).catch(revealFrontFace);
+                        } else {
+                            revealFrontFace();
+                        }
+                    };
+                    warmer.onerror = revealFrontFace;
+                    warmer.src = frontPath;
                 }, DRAW_ANIMATION.flipMs);
             };
             cardEl.addEventListener('transitionend', onFlyEnd);
@@ -2242,6 +2301,8 @@
             // 2. プレイヤー初期化
             state.players = [];
             state.debugHistory = [];
+            lastHandPanelRenderKey = '';
+            lastYakuBannerRenderKey = '';
             state.isGameEnded = false;
             state.winner = null;
             state.pendingMove = null;
@@ -2532,20 +2593,19 @@
             if (!triggerHealthBonus) {
                 applyCardEffects(player, [card]);
             }
-
-            renderBoard();
-            updateTurnUI();
-            addLog(`カード獲得: ${card.text}`, player.id, card);
-
-            updateDeckUi();
-            playDrawAnimation(type, card, () => {
-                state.lastDrawnCard = state.lastDrawnCardPending;
-                state.lastDrawnCardPending = null;
-                updateLastDrawnCardUi();
-                if (triggerHealthBonus) {
-                    const startBonusFlow = () => drawHealthMaxBonusCard(player, card);
-                    if (needsForget) {
-                        beginHandLimitResolution(player, startBonusFlow);
+            requestAnimationFrame(() => {
+                renderBoard();
+                updateTurnUI();
+                addLog(`カード獲得: ${card.text}`, player.id, card);
+                updateDeckUi();
+                playDrawAnimation(type, card, () => {
+                    state.lastDrawnCard = state.lastDrawnCardPending;
+                    state.lastDrawnCardPending = null;
+                    updateLastDrawnCardUi();
+                    if (triggerHealthBonus) {
+                        const startBonusFlow = () => drawHealthMaxBonusCard(player, card);
+                        if (needsForget) {
+                            beginHandLimitResolution(player, startBonusFlow);
                     } else {
                         startBonusFlow();
                     }
@@ -2777,6 +2837,7 @@
             if (state.isGameEnded) {
                 document.getElementById('current-player-name').innerText = "終了";
                 updateSpecialActionButtons(null);
+                renderHandPanel();
                 return;
             }
             const p = state.players[state.currentPlayerIndex];
@@ -2888,10 +2949,20 @@
         // 日記（ログ） & タブ管理
         // ==========================================
         function addLog(text, playerIndex, cardData = null) {
-            if (cardData) {
-                state.logs.push({ text, playerIndex, cardData, timestamp: Date.now() });
-                renderDiary();
+            if (!cardData) return;
+            const logEntry = { text, playerIndex, cardData, timestamp: Date.now() };
+            state.logs.push(logEntry);
+
+            const diaryVisible = state.currentTab === -1 || state.currentTab === playerIndex;
+            if (!diaryVisible) {
+                return;
             }
+            const container = document.getElementById('diary-list');
+            if (container) {
+                container.insertBefore(createDiaryCardEntryElement(logEntry), container.firstChild);
+                return;
+            }
+            renderDiary();
         }
 
         function switchTab(playerIndex) {
@@ -2925,6 +2996,25 @@
             }
         }
 
+        function createDiaryCardEntryElement(log) {
+            const el = document.createElement('div');
+            el.className = 'log-entry';
+            if (log.cardData) {
+                el.classList.add('has-card');
+                el.onclick = () => showModal(log.cardData, null);
+                el.title = 'クリックでカード詳細を確認';
+            }
+            const img = document.createElement('img');
+            img.className = 'card-thumb';
+            img.alt = 'card';
+            img.src = getCardFrontPath(log.cardData);
+            img.onerror = () => {
+                img.src = getDeckBackPath(log.cardData.type);
+            };
+            el.appendChild(img);
+            return el;
+        }
+
         function renderDiary() {
             const container = document.getElementById('diary-list');
             if (!container) return;
@@ -2935,32 +3025,7 @@
                 if (state.currentTab === -1) return true;
                 return l.playerIndex === state.currentTab;
             });
-
-            [...filteredLogs].reverse().forEach(log => {
-                const el = document.createElement('div');
-                el.className = 'log-entry';
-                if (log.cardData) {
-                    el.classList.add('has-card');
-                    el.onclick = () => showModal(log.cardData, null); 
-                    el.title = "クリックでカード詳細を確認";
-                }
-
-                let prefix = '';
-                if (log.playerIndex >= 0) {
-                    const p = state.players[log.playerIndex];
-                    prefix = `<span style="color:${p.color}; margin-right:5px;">●</span>`;
-                }
-
-                const img = document.createElement('img');
-                img.className = 'card-thumb';
-                img.alt = 'card';
-                img.src = getCardFrontPath(log.cardData);
-                img.onerror = () => {
-                    img.src = getDeckBackPath(log.cardData.type);
-                };
-                el.appendChild(img);
-                container.appendChild(el);
-            });
+        });
         }
 
         // ==========================================
