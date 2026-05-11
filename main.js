@@ -450,6 +450,11 @@
         const cardInput = document.getElementById('card-csv');
         const yakuElementInput = document.getElementById('yaku-elements-csv');
         const yakuDefinitionInput = document.getElementById('yaku-definitions-csv');
+        const cardSpriteJsonInput = document.getElementById('card-sprite-json');
+        const cardSpriteImageInput = document.getElementById('card-sprite-image');
+        const yakuSpriteJsonInput = document.getElementById('yaku-sprite-json');
+        const yakuSpriteImageInput = document.getElementById('yaku-sprite-image');
+        const specialActionUiToggleInput = document.getElementById('special-action-ui-toggle');
         const loadBtn = document.getElementById('load-btn');
         const defaultLoadStatus = document.getElementById('default-load-status');
 
@@ -459,8 +464,36 @@
             yakuElementsCsv: 'card-yaku-elements-ver1.csv',
             yakuDefinitionsCsv: 'yaku-definitions-ver1.csv'
         };
+        const CARD_FRONT_SPRITE_CONFIG = {
+            enabled: true,
+            atlasImagePath: 'card/front/sprite/cards-atlas.png',
+            atlasManifestPath: 'card/front/sprite/cards-atlas.json'
+        };
+        const YAKU_BANNER_SPRITE_CONFIG = {
+            enabled: true,
+            atlasImagePath: 'logo/Yaku.PNG',
+            atlasManifestPath: 'logo/Yaku.json'
+        };
         const YAKU_FALLBACK_NAME = 'noYaku';
         const DEFAULT_NO_YAKU_SCORE = -5;
+        let cardFrontSpriteManifest = null;
+        let cardFrontSpriteLoadPromise = null;
+        let cardFrontSpriteAtlasImage = null;
+        let cardFrontSpriteUnavailable = false;
+        const cardFrontSpriteDataUrlCache = new Map();
+        let yakuBannerSpriteManifest = null;
+        let yakuBannerSpriteLoadPromise = null;
+        let yakuBannerSpriteAtlasImage = null;
+        let yakuBannerSpriteUnavailable = false;
+        const yakuBannerSpriteDataUrlCache = new Map();
+        const DEFAULT_DATA_CACHE_PREFIX = 'zundamon7s.defaultCsv.v1';
+        const SPECIAL_ACTION_UI_STORAGE_KEY = 'zundamonSpecialActionUiEnabled';
+        let lastTurnUiRenderKey = '';
+        let specialActionUiEnabled = false;
+        let customCardFrontSpriteManifestRaw = null;
+        let customCardFrontSpriteImageDataUrl = '';
+        let customYakuBannerSpriteManifestRaw = null;
+        let customYakuBannerSpriteImageDataUrl = '';
 
         function escapeHtmlAttr(raw) {
             return String(raw)
@@ -476,8 +509,169 @@
                 .replace(/>/g, '&gt;');
         }
 
+        function readSpecialActionUiEnabledFromStorage() {
+            try {
+                const raw = localStorage.getItem(SPECIAL_ACTION_UI_STORAGE_KEY);
+                if (raw === null) return false;
+                return raw === '1' || raw === 'true';
+            } catch {
+                return false;
+            }
+        }
+
+        function persistSpecialActionUiEnabled() {
+            try {
+                localStorage.setItem(SPECIAL_ACTION_UI_STORAGE_KEY, specialActionUiEnabled ? '1' : '0');
+            } catch {
+                // ignore
+            }
+        }
+
+        function applySpecialActionUiMode() {
+            document.body.classList.toggle('hide-special-action-ui', !specialActionUiEnabled);
+            lastTurnUiRenderKey = '';
+            scheduleUpdateTurnUI();
+        }
+
+        function initSpecialActionUiToggle() {
+            specialActionUiEnabled = readSpecialActionUiEnabledFromStorage();
+            if (specialActionUiToggleInput) {
+                specialActionUiToggleInput.checked = specialActionUiEnabled;
+                specialActionUiToggleInput.addEventListener('change', () => {
+                    specialActionUiEnabled = !!specialActionUiToggleInput.checked;
+                    persistSpecialActionUiEnabled();
+                    applySpecialActionUiMode();
+                });
+            }
+            applySpecialActionUiMode();
+        }
+
         function getYakuBannerSrc(yakuName) {
             return `${YAKU_BANNER_REL_DIR}${String(yakuName || '').trim()}.PNG`;
+        }
+
+        function normalizeSpriteRectEntry(rawEntry) {
+            if (!rawEntry || typeof rawEntry !== 'object') return null;
+            const x = Number(rawEntry.x);
+            const y = Number(rawEntry.y);
+            const width = Number(rawEntry.w ?? rawEntry.width);
+            const height = Number(rawEntry.h ?? rawEntry.height);
+            if (![x, y, width, height].every(Number.isFinite)) return null;
+            if (width <= 0 || height <= 0) return null;
+            return { x, y, w: width, h: height };
+        }
+
+        function normalizeYakuBannerSpriteManifest(rawManifest) {
+            if (!rawManifest || typeof rawManifest !== 'object') return null;
+            const entries = {};
+            const rawEntries = rawManifest.entries && typeof rawManifest.entries === 'object'
+                ? rawManifest.entries
+                : {};
+            Object.entries(rawEntries).forEach(([key, value]) => {
+                const rect = normalizeSpriteRectEntry(value);
+                if (!rect) return;
+                entries[String(key).trim()] = rect;
+            });
+            if (Object.keys(entries).length === 0) return null;
+            return { entries };
+        }
+
+        async function ensureYakuBannerSpriteReady() {
+            if (!YAKU_BANNER_SPRITE_CONFIG.enabled) return false;
+            if (yakuBannerSpriteUnavailable) return false;
+            if (yakuBannerSpriteManifest && yakuBannerSpriteAtlasImage) return true;
+            if (yakuBannerSpriteLoadPromise) return yakuBannerSpriteLoadPromise;
+            yakuBannerSpriteLoadPromise = (async () => {
+                try {
+                    const rawManifest = customYakuBannerSpriteManifestRaw
+                        ? customYakuBannerSpriteManifestRaw
+                        : await (async () => {
+                            const manifestRes = await fetch(resolveAppRelativeUrl(YAKU_BANNER_SPRITE_CONFIG.atlasManifestPath), { cache: 'force-cache' });
+                            if (!manifestRes.ok) return null;
+                            return manifestRes.json();
+                        })();
+                    if (!rawManifest) return false;
+                    const normalizedManifest = normalizeYakuBannerSpriteManifest(await rawManifest);
+                    if (!normalizedManifest) return false;
+                    const atlasSrc = customYakuBannerSpriteImageDataUrl || resolveAppRelativeUrl(YAKU_BANNER_SPRITE_CONFIG.atlasImagePath);
+                    const atlasImage = await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = reject;
+                        img.src = atlasSrc;
+                    });
+                    yakuBannerSpriteManifest = normalizedManifest;
+                    yakuBannerSpriteAtlasImage = atlasImage;
+                    return true;
+                } catch (e) {
+                    yakuBannerSpriteUnavailable = true;
+                    return false;
+                } finally {
+                    yakuBannerSpriteLoadPromise = null;
+                }
+            })();
+            return yakuBannerSpriteLoadPromise;
+        }
+
+        function buildYakuBannerSpriteDataUrl(yakuName, spriteEntry) {
+            const cacheKey = String(yakuName);
+            if (yakuBannerSpriteDataUrlCache.has(cacheKey)) {
+                return yakuBannerSpriteDataUrlCache.get(cacheKey);
+            }
+            if (!yakuBannerSpriteAtlasImage || !spriteEntry) return '';
+            const canvas = document.createElement('canvas');
+            canvas.width = spriteEntry.w;
+            canvas.height = spriteEntry.h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return '';
+            ctx.drawImage(
+                yakuBannerSpriteAtlasImage,
+                spriteEntry.x,
+                spriteEntry.y,
+                spriteEntry.w,
+                spriteEntry.h,
+                0,
+                0,
+                spriteEntry.w,
+                spriteEntry.h
+            );
+            const dataUrl = canvas.toDataURL('image/png');
+            yakuBannerSpriteDataUrlCache.set(cacheKey, dataUrl);
+            return dataUrl;
+        }
+
+        async function getYakuBannerDisplaySrc(yakuName) {
+            const normalizedName = String(yakuName || '').trim();
+            if (!normalizedName || !YAKU_BANNER_SPRITE_CONFIG.enabled) {
+                return getYakuBannerSrc(normalizedName);
+            }
+            const spriteReady = await ensureYakuBannerSpriteReady();
+            if (!spriteReady) return getYakuBannerSrc(normalizedName);
+            const spriteEntry = yakuBannerSpriteManifest?.entries?.[normalizedName] || null;
+            if (!spriteEntry) return getYakuBannerSrc(normalizedName);
+            const spriteDataUrl = buildYakuBannerSpriteDataUrl(normalizedName, spriteEntry);
+            return spriteDataUrl || getYakuBannerSrc(normalizedName);
+        }
+
+        function renderYakuBannerIntoImgElement(img, yakuName) {
+            if (!img) return;
+            const normalizedName = String(yakuName || '').trim();
+            const fallbackSrc = getYakuBannerSrc(normalizedName);
+            getYakuBannerDisplaySrc(normalizedName).then((src) => {
+                img.onerror = () => {
+                    img.onerror = null;
+                    img.src = fallbackSrc;
+                };
+                img.src = src;
+            }).catch(() => {
+                img.onerror = null;
+                img.src = fallbackSrc;
+            });
+        }
+
+        function prewarmYakuBannerSpriteAssets() {
+            if (!YAKU_BANNER_SPRITE_CONFIG.enabled) return;
+            ensureYakuBannerSpriteReady().catch(() => {});
         }
 
         /**
@@ -943,16 +1137,139 @@
             return `${ASSET_PATHS.cardFrontDir}${card.no}front.PNG`;
         }
 
+        function getCardNoString(card) {
+            if (!card || card.no == null) return '';
+            return String(card.no).trim();
+        }
+
+        function getCardFrontSpriteEntry(cardNo) {
+            if (!cardFrontSpriteManifest || !cardFrontSpriteManifest.entries) return null;
+            return cardFrontSpriteManifest.entries[cardNo] || null;
+        }
+
+        function normalizeCardFrontSpriteManifest(rawManifest) {
+            if (!rawManifest || typeof rawManifest !== 'object') return null;
+            const entries = {};
+            const rawEntries = rawManifest.entries && typeof rawManifest.entries === 'object'
+                ? rawManifest.entries
+                : {};
+            Object.entries(rawEntries).forEach(([key, value]) => {
+                if (!value || typeof value !== 'object') return;
+                const x = Number(value.x);
+                const y = Number(value.y);
+                const width = Number(value.w ?? value.width);
+                const height = Number(value.h ?? value.height);
+                if (![x, y, width, height].every(Number.isFinite)) return;
+                if (width <= 0 || height <= 0) return;
+                entries[String(key).trim()] = { x, y, w: width, h: height };
+            });
+            if (Object.keys(entries).length === 0) return null;
+            return { entries };
+        }
+
+        async function ensureCardFrontSpriteReady() {
+            if (!CARD_FRONT_SPRITE_CONFIG.enabled) return false;
+            if (cardFrontSpriteUnavailable) return false;
+            if (cardFrontSpriteManifest && cardFrontSpriteAtlasImage) return true;
+            if (cardFrontSpriteLoadPromise) return cardFrontSpriteLoadPromise;
+            cardFrontSpriteLoadPromise = (async () => {
+                try {
+                    const rawManifest = customCardFrontSpriteManifestRaw
+                        ? customCardFrontSpriteManifestRaw
+                        : await (async () => {
+                            const manifestRes = await fetch(resolveAppRelativeUrl(CARD_FRONT_SPRITE_CONFIG.atlasManifestPath), { cache: 'force-cache' });
+                            if (!manifestRes.ok) return null;
+                            return manifestRes.json();
+                        })();
+                    if (!rawManifest) return false;
+                    const normalizedManifest = normalizeCardFrontSpriteManifest(await rawManifest);
+                    if (!normalizedManifest) return false;
+                    const atlasSrc = customCardFrontSpriteImageDataUrl || resolveAppRelativeUrl(CARD_FRONT_SPRITE_CONFIG.atlasImagePath);
+                    const atlasImage = await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = reject;
+                        img.src = atlasSrc;
+                    });
+                    cardFrontSpriteManifest = normalizedManifest;
+                    cardFrontSpriteAtlasImage = atlasImage;
+                    return true;
+                } catch (e) {
+                    cardFrontSpriteUnavailable = true;
+                    return false;
+                } finally {
+                    cardFrontSpriteLoadPromise = null;
+                }
+            })();
+            return cardFrontSpriteLoadPromise;
+        }
+
+        function buildCardFrontSpriteDataUrl(cardNo, spriteEntry) {
+            const cacheKey = String(cardNo);
+            if (cardFrontSpriteDataUrlCache.has(cacheKey)) {
+                return cardFrontSpriteDataUrlCache.get(cacheKey);
+            }
+            if (!cardFrontSpriteAtlasImage || !spriteEntry) return '';
+            const canvas = document.createElement('canvas');
+            canvas.width = spriteEntry.w;
+            canvas.height = spriteEntry.h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return '';
+            ctx.drawImage(
+                cardFrontSpriteAtlasImage,
+                spriteEntry.x,
+                spriteEntry.y,
+                spriteEntry.w,
+                spriteEntry.h,
+                0,
+                0,
+                spriteEntry.w,
+                spriteEntry.h
+            );
+            const dataUrl = canvas.toDataURL('image/png');
+            cardFrontSpriteDataUrlCache.set(cacheKey, dataUrl);
+            return dataUrl;
+        }
+
+        async function getCardFrontDisplaySrc(card) {
+            const no = getCardNoString(card);
+            if (!no || !CARD_FRONT_SPRITE_CONFIG.enabled || card?.type === 'ZUNDA_MOCHI') {
+                return getCardFrontPath(card);
+            }
+            const spriteReady = await ensureCardFrontSpriteReady();
+            if (!spriteReady) return getCardFrontPath(card);
+            const spriteEntry = getCardFrontSpriteEntry(no);
+            if (!spriteEntry) return getCardFrontPath(card);
+            const spriteDataUrl = buildCardFrontSpriteDataUrl(no, spriteEntry);
+            return spriteDataUrl || getCardFrontPath(card);
+        }
+
+        function renderCardFrontIntoImgElement(img, card, fallbackDeckType) {
+            if (!img) return;
+            const deckType = fallbackDeckType || (card && card.type) || '';
+            const fallbackBack = getDeckBackPath(deckType);
+            getCardFrontDisplaySrc(card).then((src) => {
+                img.onerror = () => {
+                    if (fallbackBack) img.src = fallbackBack;
+                };
+                img.src = src;
+            }).catch(() => {
+                const frontPath = getCardFrontPath(card);
+                img.onerror = () => {
+                    if (fallbackBack) img.src = fallbackBack;
+                };
+                img.src = frontPath;
+            });
+        }
+
+        function prewarmCardFrontSpriteAssets() {
+            if (!CARD_FRONT_SPRITE_CONFIG.enabled) return;
+            ensureCardFrontSpriteReady().catch(() => {});
+        }
+
         function getDeckBackPath(deckType) {
             if (deckType === 'ZUNDA_MOCHI') return ASSET_PATHS.zundaCard;
             return ASSET_PATHS.cardBack[deckType] || '';
-        }
-
-        /** Hide sidebar preview during fly/flip so the previous card does not sit beside the anim layer. */
-        function setLastDrawnSlotDrawAnimSuppressed(isSuppressed) {
-            const box = document.getElementById('last-drawn-card');
-            if (!box) return;
-            box.classList.toggle('during-draw-anim', !!isSuppressed);
         }
 
         function updateDeckUi() {
@@ -964,35 +1281,6 @@
                 if (!deckCardEl) return;
                 deckCardEl.classList.toggle('deck-empty', remaining <= 0);
             });
-        }
-
-        function updateLastDrawnCardUi() {
-            const box = document.getElementById('last-drawn-card');
-            const img = document.getElementById('last-drawn-card-img');
-            if (!box || !img) return;
-
-            const card = state.lastDrawnCard;
-            if (!card) {
-                box.classList.remove('during-draw-anim');
-                box.classList.add('empty');
-                box.classList.add('hidden');
-                box.style.aspectRatio = '3 / 4';
-                img.src = '';
-                return;
-            }
-
-            box.classList.remove('during-draw-anim');
-            box.classList.remove('empty');
-            box.classList.remove('hidden');
-            img.src = getCardFrontPath(card);
-            img.onload = () => {
-                if (!img.naturalWidth || !img.naturalHeight) return;
-                const ratio = img.naturalWidth / img.naturalHeight;
-                box.style.aspectRatio = String(ratio);
-            };
-            img.onerror = () => {
-                img.src = getDeckBackPath(card.type);
-            };
         }
 
         function setActionHint(text) {
@@ -1007,21 +1295,28 @@
             const nullifyBtn = document.getElementById('nullify-btn');
             const skipNullifyBtn = document.getElementById('skip-nullify-btn');
             if (!useBtn || !giveBtn || !nullifyBtn || !skipNullifyBtn) return;
-            if (!player || state.isGameEnded) {
-                useBtn.style.display = 'none';
-                giveBtn.style.display = 'none';
-                nullifyBtn.style.display = 'none';
-                skipNullifyBtn.style.display = 'none';
+            if (!specialActionUiEnabled) {
                 useBtn.classList.remove('is-action-visible');
                 giveBtn.classList.remove('is-action-visible');
                 nullifyBtn.classList.remove('is-action-visible');
                 skipNullifyBtn.classList.remove('is-action-visible');
+                useBtn.disabled = true;
+                giveBtn.disabled = true;
+                nullifyBtn.disabled = true;
+                skipNullifyBtn.disabled = true;
                 return;
             }
-            useBtn.style.display = 'block';
-            giveBtn.style.display = 'block';
-            nullifyBtn.style.display = 'block';
-            skipNullifyBtn.style.display = 'block';
+            if (!player || state.isGameEnded) {
+                useBtn.classList.remove('is-action-visible');
+                giveBtn.classList.remove('is-action-visible');
+                nullifyBtn.classList.remove('is-action-visible');
+                skipNullifyBtn.classList.remove('is-action-visible');
+                useBtn.disabled = true;
+                giveBtn.disabled = true;
+                nullifyBtn.disabled = true;
+                skipNullifyBtn.disabled = true;
+                return;
+            }
             const canUse = player.zundaCards > 0;
             const canGive = player.zundaCards > 0 && state.players.some((p) => p.id !== player.id && !p.finished);
             const pendingNullify = state.pendingNullifyChoicePlayerId === player.id;
@@ -1074,18 +1369,12 @@
             };
         }
 
-        function grantZundaCard(player, reasonText, grantOptions = {}) {
+        function grantZundaCard(player, reasonText) {
             if (!player) return false;
             if (player.zundaCards >= ZUNDA_CARD_LIMIT) return false;
             if (player.lastZundaGrantTurn === state.turnCount) return false;
             player.zundaCards += 1;
             player.lastZundaGrantTurn = state.turnCount;
-            const zundaCard = createZundaCard();
-            state.lastDrawnCardPending = zundaCard;
-            state.lastDrawnCard = zundaCard;
-            if (!grantOptions.skipLastDrawnUi) {
-                updateLastDrawnCardUi();
-            }
             addLog(`${player.name} は ずんだ餅カードを獲得（${reasonText}）`, player.id);
             return true;
         }
@@ -1093,7 +1382,7 @@
         function tryGrantZundaAtTurnStart(player) {
             if (!player) return;
             if (player.happiness !== CONFIG.MAX_HAPPINESS) return;
-            const granted = grantZundaCard(player, '幸福度MAX維持', { skipLastDrawnUi: true });
+            const granted = grantZundaCard(player, '幸福度MAX維持');
             if (granted) {
                 setActionHint(`幸福度MAX効果で ${player.name} に ずんだ餅カードが生成されたのだ。`);
             }
@@ -1213,10 +1502,14 @@
             }
             lastYakuBannerRenderKey = bannerKey;
             rowEl.innerHTML = entries.map((entry) => {
-                const src = getYakuBannerSrc(entry.yakuName);
                 const alt = entry.yakuName;
-                return `<div class="yaku-banner-slot"><img class="yaku-banner-img" src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" loading="lazy" decoding="async"></div>`;
+                const fallbackSrc = getYakuBannerSrc(entry.yakuName);
+                return `<div class="yaku-banner-slot"><img class="yaku-banner-img" src="${escapeHtmlAttr(fallbackSrc)}" data-yaku-name="${escapeHtmlAttr(entry.yakuName)}" alt="${escapeHtmlAttr(alt)}" loading="lazy" decoding="async"></div>`;
             }).join('');
+            [...rowEl.querySelectorAll('.yaku-banner-img')].forEach((imgEl) => {
+                const yakuName = imgEl.getAttribute('data-yaku-name') || '';
+                renderYakuBannerIntoImgElement(imgEl, yakuName);
+            });
         }
 
         function buildHandPanelRenderKey(player) {
@@ -1271,18 +1564,25 @@
             listEl.innerHTML = player.hand.map((card, index) => {
                 const forgetDisabled = (!isPendingLimit) ? 'disabled' : '';
                 const nullifyDisabled = (!canNullify || isPendingLimit) ? 'disabled' : '';
-                const frontSrc = escapeHtmlAttr(getCardFrontPath(card));
                 const fallbackSrc = escapeHtmlAttr(getDeckBackPath(card.type));
                 const label = escapeHtmlAttr(getHandCardLabel(card));
+                const cardNo = escapeHtmlAttr(getCardNoString(card));
+                const cardType = escapeHtmlAttr(card.type || '');
                 return `<div class="hand-row">
                     <div class="hand-card-thumb-wrap">
-                        <img class="hand-card-thumb" src="${frontSrc}" alt="${label}" data-fallback-src="${fallbackSrc}" loading="lazy" decoding="async" onerror="if(this.dataset.fallbackSrc){this.onerror=null;this.src=this.dataset.fallbackSrc;}">
+                        <img class="hand-card-thumb" src="${fallbackSrc}" alt="${label}" data-card-no="${cardNo}" data-card-type="${cardType}" data-fallback-src="${fallbackSrc}" loading="lazy" decoding="async">
                     </div>
                     <span class="hand-card-name">${escapeHtmlText(`${index + 1}. ${getHandCardLabel(card)}`)}</span>
                     <button type="button" onclick="forgetHandCard(${index})" ${forgetDisabled}>忘れる</button>
                     <button type="button" class="nullify-btn" onclick="applyNullifyFromHand(${index})" ${nullifyDisabled}>無かった</button>
                 </div>`;
             }).join('');
+            [...listEl.querySelectorAll('.hand-card-thumb')].forEach((imgEl) => {
+                const no = imgEl.getAttribute('data-card-no') || '';
+                const cardType = imgEl.getAttribute('data-card-type') || '';
+                if (!no) return;
+                renderCardFrontIntoImgElement(imgEl, { no, type: cardType }, cardType);
+            });
             renderYakuBanners();
         }
 
@@ -1423,8 +1723,6 @@
                 return;
             }
 
-            setLastDrawnSlotDrawAnimSuppressed(true);
-
             const from = deckEl.getBoundingClientRect();
             const backRatio = deckImageAspectRatios[deckType];
             const portraitRatio = getPortraitRatio(backRatio);
@@ -1461,27 +1759,27 @@
                 cardEl.style.transition = `transform ${DRAW_ANIMATION.flipMs}ms ease`;
                 cardEl.style.transform = 'rotate(0deg) scaleX(0.02)';
                 setTimeout(() => {
-                    const frontPath = getCardFrontPath(card);
                     const revealFrontFace = () => {
-                        img.src = frontPath;
+                        renderCardFrontIntoImgElement(img, card, card.type);
                         playSe('card');
                         cardEl.style.transform = 'rotate(0deg) scaleX(1)';
                         setTimeout(() => {
                             cardEl.remove();
                             if (onDone) onDone();
-                            setLastDrawnSlotDrawAnimSuppressed(false);
                         }, DRAW_ANIMATION.endHoldMs + DRAW_ANIMATION.flipMs);
                     };
-                    const warmer = new Image();
-                    warmer.onload = () => {
-                        if (typeof warmer.decode === 'function') {
-                            warmer.decode().then(revealFrontFace).catch(revealFrontFace);
-                        } else {
-                            revealFrontFace();
-                        }
-                    };
-                    warmer.onerror = revealFrontFace;
-                    warmer.src = frontPath;
+                    getCardFrontDisplaySrc(card).then((frontSrc) => {
+                        const warmer = new Image();
+                        warmer.onload = () => {
+                            if (typeof warmer.decode === 'function') {
+                                warmer.decode().then(revealFrontFace).catch(revealFrontFace);
+                            } else {
+                                revealFrontFace();
+                            }
+                        };
+                        warmer.onerror = revealFrontFace;
+                        warmer.src = frontSrc;
+                    }).catch(revealFrontFace);
                 }, DRAW_ANIMATION.flipMs);
             };
             cardEl.addEventListener('transitionend', onFlyEnd);
@@ -1605,6 +1903,10 @@
         cardInput.addEventListener('change', checkFiles);
         yakuElementInput.addEventListener('change', checkFiles);
         yakuDefinitionInput.addEventListener('change', checkFiles);
+        if (cardSpriteJsonInput) cardSpriteJsonInput.addEventListener('change', () => { tryLoadCardSpriteOverridesFromInputs(); });
+        if (cardSpriteImageInput) cardSpriteImageInput.addEventListener('change', () => { tryLoadCardSpriteOverridesFromInputs(); });
+        if (yakuSpriteJsonInput) yakuSpriteJsonInput.addEventListener('change', () => { tryLoadYakuSpriteOverridesFromInputs(); });
+        if (yakuSpriteImageInput) yakuSpriteImageInput.addEventListener('change', () => { tryLoadYakuSpriteOverridesFromInputs(); });
 
         function parseFile(file) {
             return new Promise((resolve, reject) => {
@@ -1627,6 +1929,79 @@
                     error: err => reject(err)
                 });
             });
+        }
+
+        function readTextFileAsString(file) {
+            return new Promise((resolve, reject) => {
+                if (!file) {
+                    reject(new Error('file not selected'));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('failed to read file'));
+                reader.readAsText(file, 'utf-8');
+            });
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                if (!file) {
+                    reject(new Error('file not selected'));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('failed to read file'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function tryLoadCardSpriteOverridesFromInputs() {
+            const manifestFile = cardSpriteJsonInput?.files?.[0];
+            const imageFile = cardSpriteImageInput?.files?.[0];
+            if (!manifestFile || !imageFile) return;
+            try {
+                const [manifestText, imageDataUrl] = await Promise.all([
+                    readTextFileAsString(manifestFile),
+                    readFileAsDataUrl(imageFile)
+                ]);
+                customCardFrontSpriteManifestRaw = JSON.parse(manifestText);
+                customCardFrontSpriteImageDataUrl = imageDataUrl;
+                cardFrontSpriteManifest = null;
+                cardFrontSpriteAtlasImage = null;
+                cardFrontSpriteUnavailable = false;
+                cardFrontSpriteDataUrlCache.clear();
+                setDefaultLoadStatus('ローカル指定のカードスプライトを読み込みます。');
+                lastHandPanelRenderKey = '';
+                scheduleUpdateTurnUI();
+                renderDiary();
+            } catch (e) {
+                setDefaultLoadStatus('カードスプライト指定の読み込みに失敗。JSON/PNGを確認してください。');
+            }
+        }
+
+        async function tryLoadYakuSpriteOverridesFromInputs() {
+            const manifestFile = yakuSpriteJsonInput?.files?.[0];
+            const imageFile = yakuSpriteImageInput?.files?.[0];
+            if (!manifestFile || !imageFile) return;
+            try {
+                const [manifestText, imageDataUrl] = await Promise.all([
+                    readTextFileAsString(manifestFile),
+                    readFileAsDataUrl(imageFile)
+                ]);
+                customYakuBannerSpriteManifestRaw = JSON.parse(manifestText);
+                customYakuBannerSpriteImageDataUrl = imageDataUrl;
+                yakuBannerSpriteManifest = null;
+                yakuBannerSpriteAtlasImage = null;
+                yakuBannerSpriteUnavailable = false;
+                yakuBannerSpriteDataUrlCache.clear();
+                setDefaultLoadStatus('ローカル指定の役スプライトを読み込みます。');
+                lastYakuBannerRenderKey = '';
+                scheduleUpdateTurnUI();
+            } catch (e) {
+                setDefaultLoadStatus('役スプライト指定の読み込みに失敗。JSON/PNGを確認してください。');
+            }
         }
 
         // 一時保存用変数
@@ -1821,22 +2196,55 @@
             defaultLoadStatus.innerText = text;
         }
 
+        function getDefaultCsvSessionStorageKey(kind) {
+            return `${DEFAULT_DATA_CACHE_PREFIX}.${kind}`;
+        }
+
+        function readDefaultCsvFromSessionCache(kind) {
+            try {
+                return sessionStorage.getItem(getDefaultCsvSessionStorageKey(kind)) || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function writeDefaultCsvToSessionCache(kind, text) {
+            try {
+                sessionStorage.setItem(getDefaultCsvSessionStorageKey(kind), text);
+            } catch (e) {
+                // Ignore storage quota or availability errors.
+            }
+        }
+
+        async function fetchDefaultCsvTextWithSessionCache(kind, relPath) {
+            const cachedText = readDefaultCsvFromSessionCache(kind);
+            if (cachedText) return cachedText;
+            const res = await fetch(resolveAppRelativeUrl(relPath), { cache: 'force-cache' });
+            if (!res.ok) {
+                throw new Error(`fetch failed: ${kind}=${res.status}`);
+            }
+            const text = await res.text();
+            if (text) writeDefaultCsvToSessionCache(kind, text);
+            return text;
+        }
+
         async function tryLoadDefaultData() {
             try {
-                setDefaultLoadStatus('同梱CSVを読み込み中...');
-
-                const [placeRes, cardRes] = await Promise.all([
-                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.placeCsv), { cache: 'no-store' }),
-                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.cardCsv), { cache: 'no-store' })
-                ]);
-
-                if (!placeRes.ok || !cardRes.ok) {
-                    throw new Error(`fetch failed: place=${placeRes.status}, card=${cardRes.status}`);
+                if (
+                    Array.isArray(tempBoardData) &&
+                    tempBoardData.length > 0 &&
+                    Array.isArray(tempCardData) &&
+                    tempCardData.length > 0 &&
+                    Array.isArray(tempYakuDefinitions) &&
+                    tempYakuDefinitions.length > 0
+                ) {
+                    showSetupScreen();
+                    return;
                 }
-
+                setDefaultLoadStatus('同梱CSVを読み込み中...');
                 const [placeText, cardText] = await Promise.all([
-                    placeRes.text(),
-                    cardRes.text()
+                    fetchDefaultCsvTextWithSessionCache('place', DEFAULT_DATA_PATHS.placeCsv),
+                    fetchDefaultCsvTextWithSessionCache('card', DEFAULT_DATA_PATHS.cardCsv)
                 ]);
 
                 const placeData = await parseCsvText(placeText);
@@ -1855,16 +2263,9 @@
                     health: parseInt(row[5]) || 0,
                     move: parseInt(row[6]) || 0
                 })).filter(c => c.type);
-                const [yakuElementRes, yakuDefinitionRes] = await Promise.all([
-                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.yakuElementsCsv), { cache: 'no-store' }),
-                    fetch(resolveAppRelativeUrl(DEFAULT_DATA_PATHS.yakuDefinitionsCsv), { cache: 'no-store' })
-                ]);
-                if (!yakuElementRes.ok || !yakuDefinitionRes.ok) {
-                    throw new Error(`fetch failed: yakuElements=${yakuElementRes.status}, yakuDefinitions=${yakuDefinitionRes.status}`);
-                }
                 const [yakuElementText, yakuDefinitionText] = await Promise.all([
-                    yakuElementRes.text(),
-                    yakuDefinitionRes.text()
+                    fetchDefaultCsvTextWithSessionCache('yakuElements', DEFAULT_DATA_PATHS.yakuElementsCsv),
+                    fetchDefaultCsvTextWithSessionCache('yakuDefinitions', DEFAULT_DATA_PATHS.yakuDefinitionsCsv)
                 ]);
                 const [yakuElementRows, yakuDefinitionRows] = await Promise.all([
                     parseCsvText(yakuElementText),
@@ -1928,6 +2329,7 @@
             initSeToggle();
             initVoiceToggle();
             initBgmToggle();
+            initSpecialActionUiToggle();
             bindRotateHintListeners();
             syncUiLayoutBodyClasses();
             bindUiLayoutMediaListeners();
@@ -1951,6 +2353,15 @@
                 applyDeckAspectRatio('DOKIDOKI', dRatio);
                 applyDeckAspectRatio('CharactorCard', cRatio);
             });
+            const warmupSprites = () => {
+                prewarmCardFrontSpriteAssets();
+                prewarmYakuBannerSpriteAssets();
+            };
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(warmupSprites, { timeout: 1200 });
+            } else {
+                setTimeout(warmupSprites, 800);
+            }
             tryLoadDefaultData();
             setupBoardBackgroundImage();
             setupBoardContainerResizeObserver();
@@ -2252,12 +2663,7 @@
                 return;
             }
             const deckType = getDeckTypeForCardReadAloudPrefix(prefixEl.value);
-            const frontPath = getCardFrontPath({ no });
-            const fallbackBack = ASSET_PATHS.cardBack[deckType] || '';
-            img.onerror = () => {
-                if (fallbackBack) img.src = fallbackBack;
-            };
-            img.src = frontPath;
+            renderCardFrontIntoImgElement(img, { no, type: deckType }, deckType);
             refreshCardReadAloudScriptDisplay();
         }
 
@@ -2403,7 +2809,6 @@
             renderBoard();
             updateDeckUi();
             state.lastDrawnCard = null;
-            updateLastDrawnCardUi();
             setActionHint('サイコロを振って開始します。');
             
             // デバッグログ: デッキ初期状態
@@ -2418,7 +2823,6 @@
 
             state.currentPlayerIndex = 0;
             tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
-            updateLastDrawnCardUi();
             updateTurnUI();
             pendingGameStartTurnSeTimeoutId = setTimeout(() => {
                 pendingGameStartTurnSeTimeoutId = null;
@@ -2531,7 +2935,6 @@
                     updateDeckUi();
                     state.lastDrawnCard = bonusCard || primaryCard;
                     state.lastDrawnCardPending = null;
-                    updateLastDrawnCardUi();
                     if (bonusCard) {
                         addLog(`体力MAXボーナス追加: ${bonusCard.text}`, player.id, bonusCard);
                     }
@@ -2638,7 +3041,6 @@
                 playDrawAnimation(type, card, () => {
                     state.lastDrawnCard = state.lastDrawnCardPending;
                     state.lastDrawnCardPending = null;
-                    updateLastDrawnCardUi();
                     if (triggerHealthBonus) {
                         const startBonusFlow = () => drawHealthMaxBonusCard(player, card);
                         if (needsForget) {
@@ -2680,7 +3082,6 @@
             setStepButtonVisible(false);
             state.lastDrawnCard = null;
             state.lastDrawnCardPending = null;
-            updateLastDrawnCardUi();
             if (areAllPlayersFinished()) {
                 setActionHint('全員ゴール！結果発表なのだ。');
                 finishGameAll();
@@ -2689,7 +3090,6 @@
             state.currentPlayerIndex = getNextPlayerIndex();
             state.turnCount += 1;
             tryGrantZundaAtTurnStart(state.players[state.currentPlayerIndex]);
-            updateLastDrawnCardUi();
             updateTurnUI();
             setActionHint('サイコロを振ってください。');
             document.getElementById('roll-btn').disabled = false;
@@ -2874,12 +3274,33 @@
 
         function updateTurnUI() {
             if (state.isGameEnded) {
+                if (lastTurnUiRenderKey === 'ended') return;
+                lastTurnUiRenderKey = 'ended';
                 document.getElementById('current-player-name').innerText = "終了";
                 updateSpecialActionButtons(null);
                 renderHandPanel();
                 return;
             }
             const p = state.players[state.currentPlayerIndex];
+            const unfinishedOthers = state.players.filter((player) => player.id !== p.id && !player.finished).length;
+            const handSignature = Array.isArray(p.hand)
+                ? p.hand.map((card) => `${card.type}:${String(card.no || '').trim()}`).join('|')
+                : '';
+            const turnUiRenderKey = [
+                p.id,
+                p.name,
+                p.color,
+                p.iconPath || '',
+                p.happiness,
+                p.health,
+                p.zundaCards,
+                unfinishedOthers,
+                state.pendingNullifyChoicePlayerId ?? '',
+                state.pendingHandLimitPlayerId ?? '',
+                handSignature
+            ].join('\t');
+            if (turnUiRenderKey === lastTurnUiRenderKey) return;
+            lastTurnUiRenderKey = turnUiRenderKey;
             const nameEl = document.getElementById('current-player-name');
             nameEl.innerText = p.name;
             nameEl.style.color = p.color;
@@ -3050,10 +3471,7 @@
             const img = document.createElement('img');
             img.className = 'card-thumb';
             img.alt = 'card';
-            img.src = getCardFrontPath(log.cardData);
-            img.onerror = () => {
-                img.src = getDeckBackPath(log.cardData.type);
-            };
+            renderCardFrontIntoImgElement(img, log.cardData, log.cardData.type);
             el.appendChild(img);
             return el;
         }
@@ -3124,23 +3542,13 @@
             const primaryImg = document.getElementById('modal-card-image-primary');
             const secondaryImg = document.getElementById('modal-card-image-secondary');
             if (primaryImg) {
-                const frontPath = getCardFrontPath(card);
-                const fallbackBack = getDeckBackPath(card.type);
-                primaryImg.src = frontPath;
-                primaryImg.onerror = () => {
-                    if (fallbackBack) primaryImg.src = fallbackBack;
-                };
+                renderCardFrontIntoImgElement(primaryImg, card, card.type);
             }
             if (secondaryImg) {
                 if (options.secondaryCard) {
                     secondaryImg.classList.remove('hidden');
                     const secondCard = options.secondaryCard;
-                    const secondFrontPath = getCardFrontPath(secondCard);
-                    const secondFallback = getDeckBackPath(secondCard.type);
-                    secondaryImg.src = secondFrontPath;
-                    secondaryImg.onerror = () => {
-                        if (secondFallback) secondaryImg.src = secondFallback;
-                    };
+                    renderCardFrontIntoImgElement(secondaryImg, secondCard, secondCard.type);
                 } else {
                     secondaryImg.classList.add('hidden');
                     secondaryImg.src = '';
@@ -3177,12 +3585,12 @@
                 const yakuEntries = findMatchingYakuBannerEntries(playerScore.hand || []);
                 const yakuBannersHtml = yakuEntries.length > 0
                     ? yakuEntries.map((entry) => {
-                        const entrySrc = getYakuBannerSrc(entry.yakuName);
-                        const safeEntrySrc = escapeHtmlAttr(entrySrc);
                         const safeEntryAlt = escapeHtmlAttr(entry.yakuName);
-                        return `<img class="result-yaku-banner" src="${safeEntrySrc}" alt="${safeEntryAlt}" loading="lazy" decoding="async">`;
+                        const fallbackSrc = escapeHtmlAttr(getYakuBannerSrc(entry.yakuName));
+                        const safeYakuNameAttr = escapeHtmlAttr(entry.yakuName);
+                        return `<img class="result-yaku-banner" src="${fallbackSrc}" data-yaku-name="${safeYakuNameAttr}" alt="${safeEntryAlt}" loading="lazy" decoding="async">`;
                     }).join('')
-                    : `<img class="result-yaku-banner" src="${escapeHtmlAttr(getYakuBannerSrc(playerScore.yakuName))}" alt="${safeYakuAlt}" loading="lazy" decoding="async">`;
+                    : `<img class="result-yaku-banner" src="${escapeHtmlAttr(getYakuBannerSrc(playerScore.yakuName))}" data-yaku-name="${safeYakuAlt}" alt="${safeYakuAlt}" loading="lazy" decoding="async">`;
                 html += `
                     <tr style="${isWinner ? 'background:#e6ffe6; font-weight:bold;' : ''}">
                         <td>${playerScore.name}</td>
@@ -3200,6 +3608,10 @@
                 `;
             });
             tbody.innerHTML = html;
+            [...tbody.querySelectorAll('.result-yaku-banner')].forEach((imgEl) => {
+                const yakuName = imgEl.getAttribute('data-yaku-name') || '';
+                renderYakuBannerIntoImgElement(imgEl, yakuName);
+            });
             screen.style.display = 'flex';
             updateRotateHintOverlay();
         }
