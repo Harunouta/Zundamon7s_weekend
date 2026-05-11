@@ -11,7 +11,7 @@
         const ZUNDA_CARD_LIMIT = 3;
         const HAND_CARD_LIMIT = 5;
         const MAX_YAKU_BANNER_SLOTS = 2;
-        const YAKU_BANNER_REL_DIR = 'logo/役/バナー/';
+        const YAKU_BANNER_REL_DIR = 'logo/';
         const ZUNDA_RECOVERY_HEALTH = 5;
         const BONUS_VOICE_DELAY_MS = 1400;
 
